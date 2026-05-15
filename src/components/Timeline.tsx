@@ -22,6 +22,17 @@ type TimelineProps = {
 
 const speedOptions = [0.75, 1, 1.5, 2];
 
+export const getMarkerPositionPercent = (
+  index: number,
+  total: number,
+): string => {
+  if (total <= 1) {
+    return "0%";
+  }
+
+  return `${(index / (total - 1)) * 100}%`;
+};
+
 export const Timeline = ({
   commits,
   currentIndex,
@@ -64,7 +75,7 @@ export const Timeline = ({
             className={index === currentIndex ? "is-active" : ""}
             key={commit.id}
             onClick={() => onSelect(index)}
-            style={{ left: `${(index / (commits.length - 1)) * 100}%` }}
+            style={{ left: getMarkerPositionPercent(index, commits.length) }}
             tabIndex={-1}
             type="button"
           />

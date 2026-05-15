@@ -87,7 +87,7 @@ const VirtualFileTree = ({ nodes }: FileTreeProps) => {
               onChange={(event) => setChangedOnly(event.target.checked)}
               type="checkbox"
             />
-            <span>Changed</span>
+            <span>Changed only</span>
           </label>
         </div>
       </div>

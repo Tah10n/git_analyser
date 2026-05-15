@@ -53,7 +53,7 @@ The selected commit controls both the file tree and the commit panel.
 ## File Tree Workflow
 
 - Use **Search** to filter by path.
-- Enable **Changed** to focus on files touched by the selected commit.
+- Enable **Changed only** to focus on files touched by the selected commit.
 - Watch change badges for added, modified, deleted, and renamed paths.
 - Use the visible/total count to understand how much the current filters hide.
 
@@ -88,9 +88,16 @@ npm run analyzer
 The endpoint listens on `http://127.0.0.1:8787`.
 
 ```powershell
-curl -X POST http://127.0.0.1:8787/analyze `
-  -H "content-type: application/json" `
-  -d "{\"url\":\"https://github.com/owner/name\",\"maxCommits\":200}"
+$body = @{
+  url = "https://github.com/owner/name"
+  maxCommits = 200
+} | ConvertTo-Json
+
+Invoke-WebRequest `
+  -Uri http://127.0.0.1:8787/analyze `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body $body
 ```
 
 The endpoint streams newline-delimited JSON. Each request uses a temporary clone

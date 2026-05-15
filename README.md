@@ -53,8 +53,8 @@ freezing the interface.
 
 - **Command bar**: repository input, token field, theme switcher, API rate
   display, and cache clearing.
-- **File tree**: searchable tree for the selected commit. Enable **Changed** to
-  show only files touched by the current commit.
+- **File tree**: searchable tree for the selected commit. Enable
+  **Changed only** to show only files touched by the current commit.
 - **Commit panel**: selected commit metadata and changed-file list.
 - **Timeline**: scrubber, playback controls, speed selector, and WebM export.
 
@@ -88,15 +88,22 @@ npm run analyzer
 Health check:
 
 ```powershell
-curl http://127.0.0.1:8787/health
+Invoke-RestMethod -Uri http://127.0.0.1:8787/health
 ```
 
 Analyze a repository:
 
 ```powershell
-curl -X POST http://127.0.0.1:8787/analyze `
-  -H "content-type: application/json" `
-  -d "{\"url\":\"https://github.com/owner/name\",\"maxCommits\":200}"
+$body = @{
+  url = "https://github.com/owner/name"
+  maxCommits = 200
+} | ConvertTo-Json
+
+Invoke-WebRequest `
+  -Uri http://127.0.0.1:8787/analyze `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body $body
 ```
 
 The response is newline-delimited JSON with progress messages and a final

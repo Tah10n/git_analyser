@@ -96,6 +96,10 @@ export const recordTimelineWebm = async (
   commits: ExplorerCommit[],
   onProgress: (progress: ExportProgress) => void,
 ): Promise<Blob> => {
+  if (commits.length === 0) {
+    throw new Error("No commits available to export.");
+  }
+
   if (!canRecordWebm()) {
     throw new Error("WebM recording is not supported in this browser.");
   }
