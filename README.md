@@ -1,15 +1,126 @@
 # Git History Explorer
 
-An IDE-like visual explorer for GitHub repository history.
+Git History Explorer is an IDE-like browser app for inspecting how a GitHub
+repository changes over time. Paste a GitHub URL or `owner/name`, load the
+default branch, and scrub through commits while the file tree and change list
+update together.
 
-The app will let users enter a GitHub repository URL, scrub through its
-commit history, and watch the file tree evolve over time.
+## Features
 
-## MVP
+- GitHub URL and `owner/name` input.
+- Bounded default-branch history loading through the GitHub REST API.
+- Static demo data fallback when no repository has been loaded.
+- Optional browser-local GitHub token for higher API limits.
+- IDE-style file tree with folder/file icons and change badges.
+- Search, changed-only filtering, and virtualized rows for larger trees.
+- Commit panel with author, date, short hash, message, and changed files.
+- Timeline slider with play, pause, previous, next, and speed controls.
+- Dark, light, and JetBrains-style themes.
+- IndexedDB history cache with an explicit clear action.
+- Browser-side WebM export for short timeline clips.
+- Optional Node analyzer endpoint for larger repositories.
 
-- Static web app.
-- GitHub repositories available through the GitHub API.
-- Browser-only GitHub API access.
-- IDE-style file tree.
-- Timeline slider with playback controls.
-- Highlighted file changes per commit.
+## Requirements
+
+- Node.js 20.19+ or 22.12+.
+- npm 10 or newer.
+- A modern Chromium, Firefox, or Safari browser.
+- GitHub API access from the browser.
+
+## Quick Start
+
+```powershell
+npm install
+npm run dev
+```
+
+Open the printed local Vite URL in a browser.
+
+## Loading A Repository
+
+1. Enter a GitHub repository as `owner/name` or
+   `https://github.com/owner/name`.
+2. Optionally enter a GitHub personal access token. The app stores it in
+   `localStorage` and only sends it to `api.github.com`.
+3. Press **Load**.
+4. Use the timeline, file tree, and commit panel to inspect the loaded history.
+
+The browser path intentionally loads a bounded commit window. When a repository
+is too large for comfortable browser use, the app shows a warning instead of
+freezing the interface.
+
+## Interface Guide
+
+- **Command bar**: repository input, token field, theme switcher, API rate
+  display, and cache clearing.
+- **File tree**: searchable tree for the selected commit. Enable **Changed** to
+  show only files touched by the current commit.
+- **Commit panel**: selected commit metadata and changed-file list.
+- **Timeline**: scrubber, playback controls, speed selector, and WebM export.
+
+## Browser Storage
+
+The app uses two browser storage areas:
+
+- `localStorage` for the optional GitHub token.
+- IndexedDB for loaded history cache entries.
+
+Use **Clear cache** in the command bar to delete cached histories. Clear the
+token field to remove the saved token.
+
+## WebM Export
+
+Press **Export WebM** in the timeline to record a compact canvas playback of the
+loaded commit sequence. Export requires `MediaRecorder` support. Current Chrome
+and Edge versions provide the best results.
+
+## Optional Analyzer
+
+The analyzer is a small Node endpoint for temporary history extraction through
+`git clone --filter=blob:none`. It is optional; the browser app works without it.
+
+Start it locally:
+
+```powershell
+npm run analyzer
+```
+
+Health check:
+
+```powershell
+curl http://127.0.0.1:8787/health
+```
+
+Analyze a repository:
+
+```powershell
+curl -X POST http://127.0.0.1:8787/analyze `
+  -H "content-type: application/json" `
+  -d "{\"url\":\"https://github.com/owner/name\",\"maxCommits\":200}"
+```
+
+The response is newline-delimited JSON with progress messages and a final
+result. Temporary clone files are removed after each request.
+
+## Scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Vite dev server. |
+| `npm run build` | Type-check and create a production build. |
+| `npm run preview` | Preview the production build locally. |
+| `npm run test` | Run Vitest tests. |
+| `npm run typecheck` | Run TypeScript project references. |
+| `npm run analyzer` | Start the optional analyzer endpoint. |
+| `npm run analyzer:self-test` | Run analyzer guardrail checks. |
+
+## Troubleshooting
+
+- **403 or low rate limit**: add a GitHub token or wait for the rate window to
+  reset.
+- **Repository stays on demo data**: check the repository input format and press
+  **Load** again.
+- **No WebM file is produced**: try Chrome or Edge and confirm the browser
+  supports `MediaRecorder`.
+- **Large tree warning**: use a smaller repository, reduce the commit window in
+  code, or use the analyzer endpoint for temporary extraction.
