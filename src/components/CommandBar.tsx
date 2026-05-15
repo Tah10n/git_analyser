@@ -1,0 +1,84 @@
+import type { FormEvent } from "react";
+import type { RateLimitInfo } from "../lib/github";
+import type { RepositorySummary } from "../types";
+import { BranchMarkIcon } from "./icons";
+
+type CommandBarProps = {
+  input: string;
+  token: string;
+  repository: RepositorySummary;
+  modeLabel: string;
+  isLoading: boolean;
+  rateLimit?: RateLimitInfo;
+  onInputChange: (value: string) => void;
+  onTokenChange: (value: string) => void;
+  onLoad: () => void;
+};
+
+const formatRate = (rateLimit?: RateLimitInfo): string | undefined => {
+  if (rateLimit?.remaining === undefined || rateLimit.limit === undefined) {
+    return undefined;
+  }
+
+  return `Rate ${rateLimit.remaining}/${rateLimit.limit}`;
+};
+
+export const CommandBar = ({
+  input,
+  token,
+  repository,
+  modeLabel,
+  isLoading,
+  rateLimit,
+  onInputChange,
+  onTokenChange,
+  onLoad,
+}: CommandBarProps) => {
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    onLoad();
+  };
+
+  const rateLabel = formatRate(rateLimit);
+
+  return (
+    <header className="command-bar">
+      <div className="brand-lockup">
+        <span className="brand-mark">
+          <BranchMarkIcon />
+        </span>
+        <div>
+          <h1>Git History Explorer</h1>
+          <p>{repository.owner}/{repository.name}</p>
+        </div>
+      </div>
+
+      <form className="repo-form" onSubmit={submit}>
+        <label className="repo-input">
+          <span>Repository</span>
+          <input
+            onChange={(event) => onInputChange(event.target.value)}
+            value={input}
+          />
+        </label>
+        <label className="token-input">
+          <span>Token</span>
+          <input
+            onChange={(event) => onTokenChange(event.target.value)}
+            type="password"
+            value={token}
+          />
+        </label>
+        <button className="load-button" disabled={isLoading} type="submit">
+          {isLoading ? "Loading" : "Load"}
+        </button>
+      </form>
+
+      <div className="status-cluster">
+        <span>Branch {repository.branch}</span>
+        <span>{modeLabel}</span>
+        {rateLabel ? <span>{rateLabel}</span> : null}
+      </div>
+    </header>
+  );
+};

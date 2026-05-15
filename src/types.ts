@@ -20,6 +20,18 @@ export type ExplorerCommit = {
   snapshot: string[];
 };
 
+export type RepositorySummary = {
+  owner: string;
+  name: string;
+  url: string;
+  branch: string;
+};
+
+export type HistoryCheckpoint = {
+  index: number;
+  snapshot: string[];
+};
+
 export type TreeNode = {
   id: string;
   name: string;
