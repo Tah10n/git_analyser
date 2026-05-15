@@ -123,6 +123,7 @@ describe("loadRepositoryHistory", () => {
     expect(result.commits[1].snapshot).toEqual(["src/main.tsx"]);
     expect(result.checkpoints[0]).toMatchObject({ index: 0 });
     expect(result.checkpoints.at(-1)).toMatchObject({ index: 1 });
+    expect(result.treeFileCount).toBe(2);
     expect(calls.every((call) => call.authorization === "Bearer test-token")).toBe(
       true,
     );

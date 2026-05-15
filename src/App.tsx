@@ -7,6 +7,7 @@ import { Timeline } from "./components/Timeline";
 import { commits, repository } from "./data/history";
 import { useRepositoryHistory } from "./hooks/useRepositoryHistory";
 import { buildTree } from "./lib/buildTree";
+import type { ThemePreset } from "./types";
 
 const playbackMs = (speed: number) => Math.round(1500 / speed);
 
@@ -17,6 +18,7 @@ export const App = () => {
   const [currentIndex, setCurrentIndex] = useState(activeCommits.length - 1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [theme, setTheme] = useState<ThemePreset>("dark");
 
   const currentCommit = activeCommits[currentIndex] ?? activeCommits[0];
   const tree = useMemo(
@@ -47,6 +49,10 @@ export const App = () => {
     setIsPlaying(false);
   }, [activeCommits]);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
   const selectCommit = (index: number) => {
     setCurrentIndex(index);
     setIsPlaying(false);
@@ -69,14 +75,21 @@ export const App = () => {
         isLoading={history.status === "loading"}
         modeLabel={modeLabel}
         onInputChange={history.setInput}
+        onClearCache={history.clearCache}
         onLoad={history.load}
         onTokenChange={history.setToken}
+        onThemeChange={setTheme}
         rateLimit={history.rateLimit}
         repository={activeRepository}
+        theme={theme}
         token={history.token}
       />
 
-      <StatusBanner status={history.status} error={history.error} />
+      <StatusBanner
+        error={history.error}
+        status={history.status}
+        warning={history.warning}
+      />
 
       <section className="explorer-layout">
         <FileTree nodes={tree} />

@@ -1,6 +1,12 @@
 import { useCallback, useState } from "react";
 import type { ExplorerCommit, RepositorySummary } from "../types";
 import {
+  clearHistoryCache,
+  createHistoryCacheKey,
+  getCachedHistory,
+  saveCachedHistory,
+} from "../lib/cache";
+import {
   GitHubApiError,
   loadRepositoryHistory,
   type RateLimitInfo,
@@ -14,9 +20,26 @@ type HistoryState = {
   status: LoadStatus;
   error?: string;
   rateLimit?: RateLimitInfo;
+  warning?: string;
 };
 
 const tokenKey = "git-history-explorer-token";
+const maxCommits = 20;
+
+const createSizeWarning = (
+  commitCount: number,
+  fileCount: number,
+): string | undefined => {
+  if (fileCount > 5_000) {
+    return `Large tree detected: ${fileCount.toLocaleString()} files loaded.`;
+  }
+
+  if (commitCount >= maxCommits) {
+    return `Loaded the first ${maxCommits} commits for this branch.`;
+  }
+
+  return undefined;
+};
 
 const readSavedToken = (): string => {
   try {
@@ -56,20 +79,37 @@ export const useRepositoryHistory = (initialInput: string) => {
       ...current,
       status: "loading",
       error: undefined,
+      warning: undefined,
     }));
 
     try {
+      const cacheKey = createHistoryCacheKey(input, maxCommits);
+      const cached = await getCachedHistory(cacheKey);
+
+      if (cached) {
+        setState({
+          commits: cached.commits,
+          repository: cached.repository,
+          status: cached.commits.length > 0 ? "ready" : "empty",
+          rateLimit: cached.rateLimit,
+          warning: createSizeWarning(cached.commits.length, cached.treeFileCount),
+        });
+        return;
+      }
+
       const result = await loadRepositoryHistory({
         input,
         token,
-        maxCommits: 20,
+        maxCommits,
       });
+      await saveCachedHistory(cacheKey, result);
 
       setState({
         commits: result.commits,
         repository: result.repository,
         status: result.commits.length > 0 ? "ready" : "empty",
         rateLimit: result.rateLimit,
+        warning: createSizeWarning(result.commits.length, result.treeFileCount),
       });
     } catch (error) {
       const message =
@@ -81,11 +121,20 @@ export const useRepositoryHistory = (initialInput: string) => {
         ...current,
         status: "error",
         error: message,
+        warning: undefined,
         rateLimit:
           error instanceof GitHubApiError ? error.rateLimit : current.rateLimit,
       }));
     }
   }, [input, token]);
+
+  const clearCache = useCallback(async () => {
+    await clearHistoryCache();
+    setState((current) => ({
+      ...current,
+      warning: "Cache cleared.",
+    }));
+  }, []);
 
   return {
     ...state,
@@ -94,5 +143,6 @@ export const useRepositoryHistory = (initialInput: string) => {
     setInput,
     setToken,
     load,
+    clearCache,
   };
 };

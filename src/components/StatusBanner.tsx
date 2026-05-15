@@ -1,9 +1,19 @@
 type StatusBannerProps = {
   status: "idle" | "loading" | "ready" | "empty" | "error";
   error?: string;
+  warning?: string;
 };
 
-export const StatusBanner = ({ status, error }: StatusBannerProps) => {
+export const StatusBanner = ({ status, error, warning }: StatusBannerProps) => {
+  if (warning && (status === "idle" || status === "ready")) {
+    return (
+      <section className="status-banner is-warning" role="status">
+        <strong>Notice</strong>
+        <span>{warning}</span>
+      </section>
+    );
+  }
+
   if (status === "idle" || status === "ready") {
     return null;
   }

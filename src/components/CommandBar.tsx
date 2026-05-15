@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
 import type { RateLimitInfo } from "../lib/github";
-import type { RepositorySummary } from "../types";
+import type { RepositorySummary, ThemePreset } from "../types";
 import { BranchMarkIcon } from "./icons";
 
 type CommandBarProps = {
@@ -10,10 +10,19 @@ type CommandBarProps = {
   modeLabel: string;
   isLoading: boolean;
   rateLimit?: RateLimitInfo;
+  theme: ThemePreset;
   onInputChange: (value: string) => void;
   onTokenChange: (value: string) => void;
+  onThemeChange: (theme: ThemePreset) => void;
+  onClearCache: () => void;
   onLoad: () => void;
 };
+
+const themeOptions: Array<{ label: string; value: ThemePreset }> = [
+  { label: "Dark", value: "dark" },
+  { label: "Light", value: "light" },
+  { label: "JetBrains", value: "jetbrains" },
+];
 
 const formatRate = (rateLimit?: RateLimitInfo): string | undefined => {
   if (rateLimit?.remaining === undefined || rateLimit.limit === undefined) {
@@ -30,8 +39,11 @@ export const CommandBar = ({
   modeLabel,
   isLoading,
   rateLimit,
+  theme,
   onInputChange,
   onTokenChange,
+  onThemeChange,
+  onClearCache,
   onLoad,
 }: CommandBarProps) => {
   const submit = (event: FormEvent) => {
@@ -78,6 +90,22 @@ export const CommandBar = ({
         <span>Branch {repository.branch}</span>
         <span>{modeLabel}</span>
         {rateLabel ? <span>{rateLabel}</span> : null}
+        <button className="cache-button" onClick={onClearCache} type="button">
+          Clear cache
+        </button>
+      </div>
+
+      <div className="theme-switch" aria-label="Theme">
+        {themeOptions.map((option) => (
+          <button
+            className={theme === option.value ? "is-selected" : ""}
+            key={option.value}
+            onClick={() => onThemeChange(option.value)}
+            type="button"
+          >
+            {option.label}
+          </button>
+        ))}
       </div>
     </header>
   );

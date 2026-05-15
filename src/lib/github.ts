@@ -5,6 +5,7 @@ import type {
   HistoryCheckpoint,
   RepositorySummary,
 } from "../types";
+import { chooseCheckpointInterval } from "./performance";
 
 export type ParsedRepository = {
   owner: string;
@@ -22,6 +23,7 @@ export type LoadedHistory = {
   commits: ExplorerCommit[];
   checkpoints: HistoryCheckpoint[];
   rateLimit?: RateLimitInfo;
+  treeFileCount: number;
 };
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -286,6 +288,7 @@ export const loadRepositoryHistory = async ({
       commits: [],
       checkpoints: [],
       rateLimit: commitListResponse.rateLimit,
+      treeFileCount: 0,
     };
   }
 
@@ -296,6 +299,7 @@ export const loadRepositoryHistory = async ({
     fetcher,
   );
   const paths = new Set(getTreePaths(treeResponse.data));
+  let maxFileCount = paths.size;
   const commits: ExplorerCommit[] = [];
 
   for (const [index, item] of orderedList.entries()) {
@@ -310,6 +314,8 @@ export const loadRepositoryHistory = async ({
     if (index > 0) {
       applyChanges(paths, changes);
     }
+
+    maxFileCount = Math.max(maxFileCount, paths.size);
 
     commits.push({
       id: detail.sha,
@@ -337,7 +343,11 @@ export const loadRepositoryHistory = async ({
       branch,
     },
     commits,
-    checkpoints: createCheckpoints(commits, 5),
+    checkpoints: createCheckpoints(
+      commits,
+      chooseCheckpointInterval(commits.length, maxFileCount),
+    ),
     rateLimit: treeResponse.rateLimit,
+    treeFileCount: maxFileCount,
   };
 };

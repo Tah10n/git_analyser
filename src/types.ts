@@ -32,6 +32,8 @@ export type HistoryCheckpoint = {
   snapshot: string[];
 };
 
+export type ThemePreset = "dark" | "light" | "jetbrains";
+
 export type TreeNode = {
   id: string;
   name: string;
