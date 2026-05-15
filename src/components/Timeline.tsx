@@ -6,11 +6,18 @@ type TimelineProps = {
   currentIndex: number;
   isPlaying: boolean;
   speed: number;
+  exportState: {
+    status: "idle" | "recording" | "ready" | "error";
+    progress: number;
+    url?: string;
+    error?: string;
+  };
   onSelect: (index: number) => void;
   onPrevious: () => void;
   onNext: () => void;
   onTogglePlayback: () => void;
   onSpeedChange: (speed: number) => void;
+  onExport: () => void;
 };
 
 const speedOptions = [0.75, 1, 1.5, 2];
@@ -20,11 +27,13 @@ export const Timeline = ({
   currentIndex,
   isPlaying,
   speed,
+  exportState,
   onSelect,
   onPrevious,
   onNext,
   onTogglePlayback,
   onSpeedChange,
+  onExport,
 }: TimelineProps) => (
   <section className="timeline-shell" aria-label="Commit timeline">
     <div className="timeline-controls">
@@ -74,6 +83,27 @@ export const Timeline = ({
           {option}x
         </button>
       ))}
+    </div>
+
+    <div className="export-group">
+      <button
+        className="export-button"
+        disabled={exportState.status === "recording"}
+        onClick={onExport}
+        type="button"
+      >
+        {exportState.status === "recording"
+          ? `Exporting ${exportState.progress}%`
+          : "Export WebM"}
+      </button>
+      {exportState.status === "ready" ? (
+        <a className="export-link" download="git-history-explorer.webm" href={exportState.url}>
+          WebM ready
+        </a>
+      ) : null}
+      {exportState.status === "error" ? (
+        <span className="export-error">{exportState.error}</span>
+      ) : null}
     </div>
   </section>
 );
