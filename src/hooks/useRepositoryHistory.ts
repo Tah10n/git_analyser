@@ -6,6 +6,7 @@ import {
   getCachedHistory,
   saveCachedHistory,
 } from "../lib/cache";
+import { browserLimits } from "../lib/limits";
 import {
   GitHubApiError,
   loadRepositoryHistory,
@@ -24,13 +25,13 @@ type HistoryState = {
 };
 
 const tokenKey = "git-history-explorer-token";
-const maxCommits = 20;
+const maxCommits = browserLimits.maxCommits;
 
 const createSizeWarning = (
   commitCount: number,
   fileCount: number,
 ): string | undefined => {
-  if (fileCount > 5_000) {
+  if (fileCount > browserLimits.warningFileCount) {
     return `Large tree detected: ${fileCount.toLocaleString()} files loaded.`;
   }
 
