@@ -21,16 +21,24 @@ type HistoryState = {
   status: LoadStatus;
   error?: string;
   rateLimit?: RateLimitInfo;
+  source?: "browser" | "service";
   warning?: string;
 };
 
 const tokenKey = "git-history-explorer-token";
 const maxCommits = browserLimits.maxCommits;
+const analyzerMaxCommits = browserLimits.handoffCommitCount;
+const analyzerUrl = import.meta.env.VITE_ANALYZER_URL;
 
 const createSizeWarning = (
   commitCount: number,
   fileCount: number,
+  notice?: string,
 ): string | undefined => {
+  if (notice) {
+    return notice;
+  }
+
   if (fileCount > browserLimits.warningFileCount) {
     return `Large tree detected: ${fileCount.toLocaleString()} files loaded.`;
   }
@@ -84,7 +92,8 @@ export const useRepositoryHistory = (initialInput: string) => {
     }));
 
     try {
-      const cacheKey = createHistoryCacheKey(input, maxCommits);
+      const loadLimit = analyzerUrl ? analyzerMaxCommits : maxCommits;
+      const cacheKey = createHistoryCacheKey(`${analyzerUrl ? `service:${analyzerUrl}:` : "browser:"}${input}`, loadLimit);
       const cached = await getCachedHistory(cacheKey);
 
       if (cached) {
@@ -93,15 +102,17 @@ export const useRepositoryHistory = (initialInput: string) => {
           repository: cached.repository,
           status: cached.commits.length > 0 ? "ready" : "empty",
           rateLimit: cached.rateLimit,
-          warning: createSizeWarning(cached.commits.length, cached.treeFileCount),
+          source: cached.source,
+          warning: createSizeWarning(cached.commits.length, cached.treeFileCount, cached.notice),
         });
         return;
       }
 
       const result = await loadRepositoryHistory({
+        analyzerUrl,
         input,
         token,
-        maxCommits,
+        maxCommits: loadLimit,
       });
       await saveCachedHistory(cacheKey, result);
 
@@ -110,7 +121,8 @@ export const useRepositoryHistory = (initialInput: string) => {
         repository: result.repository,
         status: result.commits.length > 0 ? "ready" : "empty",
         rateLimit: result.rateLimit,
-        warning: createSizeWarning(result.commits.length, result.treeFileCount),
+        source: result.source,
+        warning: createSizeWarning(result.commits.length, result.treeFileCount, result.notice),
       });
     } catch (error) {
       const message =
@@ -123,6 +135,7 @@ export const useRepositoryHistory = (initialInput: string) => {
         status: "error",
         error: message,
         warning: undefined,
+        source: undefined,
         rateLimit:
           error instanceof GitHubApiError ? error.rateLimit : current.rateLimit,
       }));

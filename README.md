@@ -18,7 +18,7 @@ update together.
 - Dark, light, and JetBrains-style themes.
 - IndexedDB history cache with an explicit clear action.
 - Browser-side WebM export for short timeline clips.
-- Optional Node analyzer endpoint for larger repositories.
+- Optional analyzer service for larger repositories and broader history windows.
 
 ## Requirements
 
@@ -78,13 +78,14 @@ and Edge versions provide the best results.
 
 ## Optional Analyzer
 
-The analyzer is a small Node endpoint for temporary history extraction through
-`git clone --filter=blob:none`. It is optional; the browser app works without it.
+The analyzer service is optional; the browser app works without it and falls
+back to direct GitHub API loading when the service is unavailable.
 
-Start it locally:
+Point the app at a service instance with:
 
 ```powershell
-npm run analyzer
+$env:VITE_ANALYZER_URL="http://127.0.0.1:8787"
+npm run dev
 ```
 
 Health check:
@@ -102,14 +103,16 @@ $body = @{
 } | ConvertTo-Json
 
 Invoke-WebRequest `
-  -Uri http://127.0.0.1:8787/analyze `
+  -Uri http://127.0.0.1:8787/history/analyze `
   -Method POST `
   -ContentType "application/json" `
   -Body $body
 ```
 
 The response is newline-delimited JSON with progress messages and a final
-result. Temporary clone files are removed after each request.
+result. When configured, the app uses the service for larger history loads,
+renders the returned branch graph data without extra parent lookups, and keeps
+the browser-only path as a fallback.
 
 ## Scripts
 

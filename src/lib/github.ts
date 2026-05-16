@@ -22,7 +22,9 @@ export type LoadedHistory = {
   repository: RepositorySummary;
   commits: ExplorerCommit[];
   checkpoints: HistoryCheckpoint[];
+  notice?: string;
   rateLimit?: RateLimitInfo;
+  source: "browser" | "service";
   treeFileCount: number;
 };
 
@@ -69,6 +71,46 @@ type GitHubTreeResponse = {
     type?: string;
   }>;
 };
+
+type AnalyzerChange = {
+  path: string;
+  previousPath?: string;
+  status: ChangeStatus;
+};
+
+type AnalyzerCommit = {
+  author: string;
+  changes: AnalyzerChange[];
+  date: string;
+  id: string;
+  shortHash: string;
+  title: string;
+};
+
+type AnalyzerHistoryResult = {
+  commits: AnalyzerCommit[];
+  limits?: {
+    effective?: number;
+    hasMore?: boolean;
+    maximum?: number;
+    truncated?: boolean;
+  };
+  ref?: {
+    requested?: string;
+    selected?: string;
+  };
+  repository: {
+    branch?: string;
+    name: string;
+    owner: string;
+    url: string;
+  };
+};
+
+type AnalyzerRecord =
+  | { type: "status" }
+  | { type: "result"; commits?: unknown }
+  | { type: "error"; message?: string };
 
 export class GitHubApiError extends Error {
   readonly status: number;
@@ -244,12 +286,117 @@ const createCheckpoints = (
 
 const shortHash = (sha: string): string => sha.slice(0, 7);
 
+const analyzerBaseUrl = (value?: string): string | undefined => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.replace(/\/+$/, "");
+};
+
+const parseAnalyzerRecords = (text: string): AnalyzerRecord[] =>
+  (text.match(/[^\r\n]+/g) ?? []).map((line) => JSON.parse(line) as AnalyzerRecord);
+
+const isAnalyzerResult = (record: AnalyzerRecord): record is AnalyzerRecord & { type: "result"; commits: unknown } =>
+  record.type === "result" && Array.isArray(record.commits);
+
+const toBrowserUrl = (parsed: ParsedRepository): string =>
+  `https://github.com/${parsed.owner}/${parsed.name}`;
+
+const mapAnalyzerHistory = (data: AnalyzerHistoryResult): LoadedHistory => {
+  const branch = data.ref?.selected ?? data.ref?.requested ?? data.repository.branch ?? "HEAD";
+  const paths = new Set<string>();
+  let maxFileCount = 0;
+  const commits = [...data.commits].reverse().map((commit): ExplorerCommit => {
+    const changes = commit.changes.map((change): CommitChange => ({
+      path: change.path,
+      previousPath: change.previousPath,
+      status: change.status,
+      summary: `${statusLabel(change.status)} ${change.path}`,
+    }));
+    applyChanges(paths, changes);
+    maxFileCount = Math.max(maxFileCount, paths.size);
+
+    return {
+      id: commit.id,
+      shortHash: commit.shortHash || shortHash(commit.id),
+      message: commit.title,
+      author: commit.author,
+      date: commit.date,
+      branch,
+      changes,
+      snapshot: [...paths].sort((left, right) => left.localeCompare(right)),
+    };
+  });
+
+  const truncated = data.limits?.hasMore || data.limits?.truncated;
+  return {
+    repository: {
+      owner: data.repository.owner,
+      name: data.repository.name,
+      url: data.repository.url,
+      branch,
+    },
+    commits,
+    checkpoints: createCheckpoints(
+      commits,
+      chooseCheckpointInterval(commits.length, maxFileCount),
+    ),
+    notice: truncated
+      ? `Analyzer service returned ${commits.length.toLocaleString()} commits; more history is available on the backend.`
+      : `Analyzer service loaded ${commits.length.toLocaleString()} commits.`,
+    source: "service",
+    treeFileCount: maxFileCount,
+  };
+};
+
+const loadRepositoryHistoryFromAnalyzer = async ({
+  analyzerUrl,
+  input,
+  maxCommits,
+  parsed,
+  fetcher,
+}: {
+  analyzerUrl: string;
+  input: string;
+  maxCommits: number;
+  parsed: ParsedRepository;
+  fetcher: Fetcher;
+}): Promise<LoadedHistory> => {
+  const response = await fetcher(`${analyzerUrl}/history/analyze`, {
+    body: JSON.stringify({
+      allHistory: true,
+      maxCommits,
+      url: input.trim().startsWith("http") ? input.trim() : toBrowserUrl(parsed),
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+
+  const text = await response.text();
+  const records = parseAnalyzerRecords(text);
+  const error = records.find((record): record is AnalyzerRecord & { type: "error" } => record.type === "error");
+  if (!response.ok || error) {
+    throw new GitHubApiError(error?.message ?? `Analyzer service failed with ${response.status}.`, response.status);
+  }
+
+  const result = records.find(isAnalyzerResult);
+  if (!result) {
+    throw new GitHubApiError("Analyzer service did not return history data.", response.status);
+  }
+
+  return mapAnalyzerHistory(result as AnalyzerHistoryResult & AnalyzerRecord);
+};
+
 export const loadRepositoryHistory = async ({
+  analyzerUrl,
   input,
   token = "",
   maxCommits = 20,
   fetcher = fetch,
 }: {
+  analyzerUrl?: string;
   input: string;
   token?: string;
   maxCommits?: number;
@@ -259,6 +406,21 @@ export const loadRepositoryHistory = async ({
 
   if (!parsed) {
     throw new GitHubApiError("Enter a valid GitHub repository.", 0);
+  }
+
+  const normalizedAnalyzerUrl = analyzerBaseUrl(analyzerUrl);
+  if (normalizedAnalyzerUrl) {
+    try {
+      return await loadRepositoryHistoryFromAnalyzer({
+        analyzerUrl: normalizedAnalyzerUrl,
+        input,
+        maxCommits,
+        parsed,
+        fetcher,
+      });
+    } catch {
+      // Keep the browser GitHub API path available when the optional service is unavailable.
+    }
   }
 
   const normalizedToken = token.trim();
@@ -288,6 +450,7 @@ export const loadRepositoryHistory = async ({
       commits: [],
       checkpoints: [],
       rateLimit: commitListResponse.rateLimit,
+      source: "browser",
       treeFileCount: 0,
     };
   }
@@ -347,7 +510,11 @@ export const loadRepositoryHistory = async ({
       commits,
       chooseCheckpointInterval(commits.length, maxFileCount),
     ),
+    notice: normalizedAnalyzerUrl
+      ? "Analyzer service was unavailable; loaded the browser GitHub API fallback."
+      : undefined,
     rateLimit: treeResponse.rateLimit,
+    source: "browser",
     treeFileCount: maxFileCount,
   };
 };

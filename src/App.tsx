@@ -117,7 +117,9 @@ export const App = () => {
     }
   };
 
-  const modeLabel = history.commits.length > 0 ? "Live API" : "Demo data";
+  const modeLabel = history.commits.length > 0
+    ? history.source === "service" ? "Service API" : "Browser API"
+    : "Demo data";
 
   return (
     <main className="app-shell">
