@@ -52,6 +52,9 @@ The selected commit controls both the file tree and the commit panel.
 
 ## File Tree Workflow
 
+- Folders start collapsed.
+- Folders containing files touched by the selected commit open automatically.
+- Use the chevron beside a folder to open or close it manually.
 - Use **Search** to filter by path.
 - Enable **Changed only** to focus on files touched by the selected commit.
 - Watch change badges for added, modified, deleted, and renamed paths.

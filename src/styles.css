@@ -410,7 +410,7 @@ h3 {
 
 .tree-row {
   display: grid;
-  grid-template-columns: calc(var(--depth) * 18px) 17px minmax(0, 1fr) auto;
+  grid-template-columns: calc(var(--depth) * 18px) 18px 17px minmax(0, 1fr) auto;
   align-items: center;
   height: 32px;
   padding: 0 8px;
@@ -423,6 +423,39 @@ h3 {
 
 .tree-row + .tree-row {
   margin-top: 0;
+}
+
+.tree-expander,
+.tree-expander-spacer {
+  width: 18px;
+  height: 18px;
+}
+
+.tree-expander {
+  display: grid;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  place-items: center;
+}
+
+.tree-expander:hover {
+  background: rgb(255 255 255 / 8%);
+  color: var(--text);
+}
+
+.tree-expander svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+  transform: rotate(0deg);
+}
+
+.tree-expander.is-expanded svg {
+  transform: rotate(90deg);
 }
 
 .tree-row.is-added,

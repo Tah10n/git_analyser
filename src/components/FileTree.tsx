@@ -1,10 +1,17 @@
-import { FileIcon, FolderIcon } from "./icons";
-import type { TreeNode } from "../types";
-import { getChangeTone } from "../lib/buildTree";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getChangeTone } from "../lib/buildTree";
+import type { TreeNode } from "../types";
+import { ChevronRightIcon, FileIcon, FolderIcon } from "./icons";
 
 type FileTreeProps = {
+  changedPaths: string[];
   nodes: TreeNode[];
+};
+
+export type TreeExpansion = Map<string, boolean>;
+
+type FlatTreeNode = TreeNode & {
+  isExpanded: boolean;
 };
 
 const rowHeight = 34;
@@ -16,17 +23,134 @@ const flattenNodes = (nodes: TreeNode[]): TreeNode[] =>
 const matchesSearch = (node: TreeNode, query: string): boolean =>
   !query || node.path.toLowerCase().includes(query.toLowerCase());
 
-const TreeRow = ({ node }: { node: TreeNode }) => {
+export const getAncestorPaths = (path: string): string[] => {
+  const parts = path.match(/[^/]+/g) ?? [];
+
+  return parts
+    .slice(0, -1)
+    .map((_, index) => parts.slice(0, index + 1).join("/"));
+};
+
+export const createAutoExpandedPaths = (paths: string[]): Set<string> =>
+  new Set(paths.flatMap(getAncestorPaths));
+
+const matchesVisibleFilters = (
+  node: TreeNode,
+  query: string,
+  changedOnly: boolean,
+): boolean =>
+  matchesSearch(node, query) && (!changedOnly || Boolean(node.status));
+
+const hasVisibleDescendant = (
+  node: TreeNode,
+  query: string,
+  changedOnly: boolean,
+): boolean =>
+  matchesVisibleFilters(node, query, changedOnly) ||
+  node.children.some((child) =>
+    hasVisibleDescendant(child, query, changedOnly),
+  );
+
+const getSearchExpandedPaths = (nodes: TreeNode[], query: string): Set<string> => {
+  if (!query) {
+    return new Set();
+  }
+
+  const matchingPaths = flattenNodes(nodes)
+    .filter((node) => matchesSearch(node, query))
+    .map((node) => node.path);
+
+  return createAutoExpandedPaths(matchingPaths);
+};
+
+export const isExpandedByState = (
+  path: string,
+  autoExpandedPaths: Set<string>,
+  searchExpandedPaths: Set<string>,
+  manualExpansion: TreeExpansion,
+): boolean => {
+  if (searchExpandedPaths.has(path)) {
+    return true;
+  }
+
+  const manualValue = manualExpansion.get(path);
+
+  return manualValue ?? autoExpandedPaths.has(path);
+};
+
+export const flattenVisibleNodes = ({
+  autoExpandedPaths,
+  changedOnly,
+  manualExpansion,
+  nodes,
+  query,
+  searchExpandedPaths,
+}: {
+  autoExpandedPaths: Set<string>;
+  changedOnly: boolean;
+  manualExpansion: TreeExpansion;
+  nodes: TreeNode[];
+  query: string;
+  searchExpandedPaths: Set<string>;
+}): FlatTreeNode[] => {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const visit = (node: TreeNode): FlatTreeNode[] => {
+    if (!hasVisibleDescendant(node, normalizedQuery, changedOnly)) {
+      return [];
+    }
+
+    const isExpanded =
+      node.kind === "folder" &&
+      isExpandedByState(
+        node.path,
+        autoExpandedPaths,
+        searchExpandedPaths,
+        manualExpansion,
+      );
+    const rows: FlatTreeNode[] = [{ ...node, isExpanded }];
+
+    if (node.kind === "folder" && isExpanded) {
+      rows.push(...node.children.flatMap(visit));
+    }
+
+    return rows;
+  };
+
+  return nodes.flatMap(visit);
+};
+
+const TreeRow = ({
+  node,
+  onToggle,
+}: {
+  node: FlatTreeNode;
+  onToggle: (node: FlatTreeNode) => void;
+}) => {
   const Icon = node.kind === "folder" ? FolderIcon : FileIcon;
   const statusLabel = node.status ? getChangeTone(node.status) : undefined;
+  const canToggle = node.kind === "folder" && node.children.length > 0;
 
   return (
     <div
+      aria-expanded={canToggle ? node.isExpanded : undefined}
       className={`tree-row ${node.status ? `is-${node.status}` : ""}`}
       role="treeitem"
       style={{ "--depth": node.depth } as React.CSSProperties}
     >
       <span className="tree-indent" />
+      {canToggle ? (
+        <button
+          aria-label={`${node.isExpanded ? "Collapse" : "Expand"} ${node.path}`}
+          className={`tree-expander ${node.isExpanded ? "is-expanded" : ""}`}
+          onClick={() => onToggle(node)}
+          type="button"
+        >
+          <ChevronRightIcon />
+        </button>
+      ) : (
+        <span className="tree-expander-spacer" />
+      )}
       <Icon className="tree-icon" />
       <span className="tree-name">{node.name}</span>
       {statusLabel ? <span className="change-pill">{statusLabel}</span> : null}
@@ -34,24 +158,47 @@ const TreeRow = ({ node }: { node: TreeNode }) => {
   );
 };
 
-export const FileTree = ({ nodes }: FileTreeProps) => (
-  <VirtualFileTree nodes={nodes} />
+export const FileTree = ({ changedPaths, nodes }: FileTreeProps) => (
+  <VirtualFileTree changedPaths={changedPaths} nodes={nodes} />
 );
 
-const VirtualFileTree = ({ nodes }: FileTreeProps) => {
+const VirtualFileTree = ({ changedPaths, nodes }: FileTreeProps) => {
   const [query, setQuery] = useState("");
   const [changedOnly, setChangedOnly] = useState(false);
+  const [manualExpansion, setManualExpansion] = useState<TreeExpansion>(
+    () => new Map(),
+  );
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(420);
   const listRef = useRef<HTMLDivElement>(null);
   const flatNodes = useMemo(() => flattenNodes(nodes), [nodes]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const autoExpandedPaths = useMemo(
+    () => createAutoExpandedPaths(changedPaths),
+    [changedPaths],
+  );
+  const searchExpandedPaths = useMemo(
+    () => getSearchExpandedPaths(nodes, normalizedQuery),
+    [nodes, normalizedQuery],
+  );
   const visibleNodes = useMemo(
     () =>
-      flatNodes.filter(
-        (node) =>
-          matchesSearch(node, query) && (!changedOnly || Boolean(node.status)),
-      ),
-    [changedOnly, flatNodes, query],
+      flattenVisibleNodes({
+        autoExpandedPaths,
+        changedOnly,
+        manualExpansion,
+        nodes,
+        query: normalizedQuery,
+        searchExpandedPaths,
+      }),
+    [
+      autoExpandedPaths,
+      changedOnly,
+      manualExpansion,
+      nodes,
+      normalizedQuery,
+      searchExpandedPaths,
+    ],
   );
   const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
   const visibleCount = Math.ceil(viewportHeight / rowHeight) + overscan * 2;
@@ -63,6 +210,14 @@ const VirtualFileTree = ({ nodes }: FileTreeProps) => {
     listRef.current?.scrollTo({ top: 0 });
     setScrollTop(0);
   }, [changedOnly, query]);
+
+  const toggleNode = (node: FlatTreeNode) => {
+    setManualExpansion((current) => {
+      const next = new Map(current);
+      next.set(node.path, !node.isExpanded);
+      return next;
+    });
+  };
 
   return (
     <div className="panel tree-panel">
@@ -107,7 +262,7 @@ const VirtualFileTree = ({ nodes }: FileTreeProps) => {
               style={{ transform: `translateY(${offsetY}px)` }}
             >
               {rows.map((node) => (
-                <TreeRow key={node.id} node={node} />
+                <TreeRow key={node.id} node={node} onToggle={toggleNode} />
               ))}
             </div>
           </div>

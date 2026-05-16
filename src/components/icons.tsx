@@ -38,6 +38,12 @@ export const FileIcon = ({ className }: IconProps) => (
   </svg>
 );
 
+export const ChevronRightIcon = ({ className }: IconProps) => (
+  <svg className={className} viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M5.8 3.2 10.6 8l-4.8 4.8-1.1-1.1L8.4 8 4.7 4.3l1.1-1.1Z" />
+  </svg>
+);
+
 export const BranchMarkIcon = ({ className }: IconProps) => (
   <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
     <path

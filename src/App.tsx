@@ -32,6 +32,13 @@ export const App = () => {
   });
 
   const currentCommit = activeCommits[currentIndex] ?? activeCommits[0];
+  const currentCommitPaths = useMemo(
+    () =>
+      currentCommit.changes.flatMap((change) =>
+        change.previousPath ? [change.path, change.previousPath] : [change.path],
+      ),
+    [currentCommit],
+  );
   const tree = useMemo(
     () => buildTree(currentCommit.snapshot, currentCommit.changes),
     [currentCommit],
@@ -136,7 +143,7 @@ export const App = () => {
       />
 
       <section className="explorer-layout">
-        <FileTree nodes={tree} />
+        <FileTree changedPaths={currentCommitPaths} nodes={tree} />
         <CommitPanel commit={currentCommit} index={currentIndex} total={activeCommits.length} />
       </section>
 

@@ -53,8 +53,10 @@ freezing the interface.
 
 - **Command bar**: repository input, token field, theme switcher, API rate
   display, and cache clearing.
-- **File tree**: searchable tree for the selected commit. Enable
-  **Changed only** to show only files touched by the current commit.
+- **File tree**: searchable tree for the selected commit. Folders start
+  collapsed, folders containing current commit changes open automatically, and
+  each folder can be opened or closed manually. Enable **Changed only** to show
+  only files touched by the current commit.
 - **Commit panel**: selected commit metadata and changed-file list.
 - **Timeline**: scrubber, playback controls, speed selector, and WebM export.
 
