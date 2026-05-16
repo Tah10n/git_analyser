@@ -152,6 +152,7 @@ export const App = () => {
       <Timeline
         commits={activeCommits}
         currentIndex={currentIndex}
+        graph={history.graph}
         isPlaying={isPlaying}
         onNext={goNext}
         onPrevious={goPrevious}

@@ -16,6 +16,7 @@ export type ExplorerCommit = {
   author: string;
   date: string;
   branch: string;
+  parents?: string[];
   changes: CommitChange[];
   snapshot: string[];
 };
@@ -30,6 +31,14 @@ export type RepositorySummary = {
 export type HistoryCheckpoint = {
   index: number;
   snapshot: string[];
+};
+
+export type CommitGraph = {
+  edges: { from: string; to: string }[];
+  heads: string[];
+  merges: string[];
+  nodes: string[];
+  roots: string[];
 };
 
 export type ThemePreset = "dark" | "light" | "jetbrains";

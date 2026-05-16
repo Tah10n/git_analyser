@@ -1,6 +1,7 @@
 import type {
   ChangeStatus,
   CommitChange,
+  CommitGraph,
   ExplorerCommit,
   HistoryCheckpoint,
   RepositorySummary,
@@ -22,6 +23,7 @@ export type LoadedHistory = {
   repository: RepositorySummary;
   commits: ExplorerCommit[];
   checkpoints: HistoryCheckpoint[];
+  graph?: CommitGraph;
   notice?: string;
   rateLimit?: RateLimitInfo;
   source: "browser" | "service";
@@ -51,6 +53,7 @@ type GitHubCommitFile = {
 
 type GitHubCommitDetail = {
   sha: string;
+  parents?: Array<{ sha: string }>;
   commit: {
     author?: {
       date?: string;
@@ -83,12 +86,14 @@ type AnalyzerCommit = {
   changes: AnalyzerChange[];
   date: string;
   id: string;
+  parents?: string[];
   shortHash: string;
   title: string;
 };
 
 type AnalyzerHistoryResult = {
   commits: AnalyzerCommit[];
+  graph?: CommitGraph;
   limits?: {
     effective?: number;
     hasMore?: boolean;
@@ -286,6 +291,30 @@ const createCheckpoints = (
 
 const shortHash = (sha: string): string => sha.slice(0, 7);
 
+const buildGraphFromCommits = (commits: ExplorerCommit[]): CommitGraph => {
+  const commitIds = new Set(commits.map((commit) => commit.id));
+  const edges = commits.flatMap((commit) =>
+    (commit.parents ?? []).map((parent) => ({ from: commit.id, to: parent })),
+  );
+  const referencedParents = new Set(
+    edges.filter((edge) => commitIds.has(edge.to)).map((edge) => edge.to),
+  );
+
+  return {
+    edges,
+    heads: commits
+      .map((commit) => commit.id)
+      .filter((id) => !referencedParents.has(id)),
+    merges: commits
+      .filter((commit) => (commit.parents ?? []).length > 1)
+      .map((commit) => commit.id),
+    nodes: commits.map((commit) => commit.id),
+    roots: commits
+      .filter((commit) => (commit.parents ?? []).length === 0)
+      .map((commit) => commit.id),
+  };
+};
+
 const analyzerBaseUrl = (value?: string): string | undefined => {
   const trimmed = value?.trim();
   if (!trimmed) {
@@ -325,6 +354,7 @@ const mapAnalyzerHistory = (data: AnalyzerHistoryResult): LoadedHistory => {
       author: commit.author,
       date: commit.date,
       branch,
+      parents: commit.parents ?? [],
       changes,
       snapshot: [...paths].sort((left, right) => left.localeCompare(right)),
     };
@@ -343,6 +373,7 @@ const mapAnalyzerHistory = (data: AnalyzerHistoryResult): LoadedHistory => {
       commits,
       chooseCheckpointInterval(commits.length, maxFileCount),
     ),
+    graph: data.graph ?? buildGraphFromCommits(commits),
     notice: truncated
       ? `Analyzer service returned ${commits.length.toLocaleString()} commits; more history is available on the backend.`
       : `Analyzer service loaded ${commits.length.toLocaleString()} commits.`,
@@ -452,6 +483,7 @@ export const loadRepositoryHistory = async ({
       rateLimit: commitListResponse.rateLimit,
       source: "browser",
       treeFileCount: 0,
+      graph: buildGraphFromCommits([]),
     };
   }
 
@@ -493,6 +525,7 @@ export const loadRepositoryHistory = async ({
         detail.commit.committer?.date ??
         new Date(0).toISOString(),
       branch,
+      parents: (detail.parents ?? []).map((parent) => parent.sha),
       changes,
       snapshot: [...paths].sort((left, right) => left.localeCompare(right)),
     });
@@ -510,6 +543,7 @@ export const loadRepositoryHistory = async ({
       commits,
       chooseCheckpointInterval(commits.length, maxFileCount),
     ),
+    graph: buildGraphFromCommits(commits),
     notice: normalizedAnalyzerUrl
       ? "Analyzer service was unavailable; loaded the browser GitHub API fallback."
       : undefined,

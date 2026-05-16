@@ -662,6 +662,7 @@ h3 {
 .scrubber {
   position: relative;
   min-width: 0;
+  padding-bottom: 28px;
 }
 
 .scrubber input {
@@ -672,7 +673,7 @@ h3 {
 .commit-markers {
   position: absolute;
   right: 7px;
-  bottom: -12px;
+  bottom: 15px;
   left: 7px;
   height: 12px;
 }
@@ -691,6 +692,64 @@ h3 {
 .commit-markers button.is-active {
   border-color: var(--teal);
   background: var(--teal);
+}
+
+.commit-graph {
+  position: absolute;
+  right: 7px;
+  bottom: 0;
+  left: 7px;
+  height: 16px;
+}
+
+.commit-graph::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgb(148 163 184 / 0%),
+    rgb(148 163 184 / 42%),
+    rgb(148 163 184 / 0%)
+  );
+}
+
+.graph-node {
+  position: absolute;
+  top: 1px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid rgb(148 163 184 / 70%);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.55rem;
+  font-weight: 800;
+  line-height: 1;
+  transform: translateX(-50%);
+}
+
+.graph-node.is-root {
+  border-radius: 4px;
+}
+
+.graph-node.is-head {
+  border-color: var(--teal);
+}
+
+.graph-node.is-merge {
+  width: 18px;
+  height: 18px;
+  top: -1px;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(110 231 183 / 10%);
 }
 
 .speed-group button {

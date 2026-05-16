@@ -56,10 +56,18 @@ describe("loadRepositoryHistory", () => {
           repository: { owner: "acme", name: "tool", url: "https://github.com/acme/tool" },
           ref: { requested: "HEAD", selected: "main" },
           limits: { effective: 500, hasMore: true, maximum: 1000, truncated: true },
+          graph: {
+            edges: [{ from: "newer123456", to: "older123456" }],
+            heads: ["newer123456"],
+            merges: [],
+            nodes: ["newer123456", "older123456"],
+            roots: ["older123456"],
+          },
           commits: [
             {
               id: "newer123456",
               shortHash: "newer12",
+              parents: ["older123456"],
               author: "Ada",
               date: "2026-01-02T00:00:00Z",
               title: "Rename app entry",
@@ -71,6 +79,7 @@ describe("loadRepositoryHistory", () => {
             {
               id: "older123456",
               shortHash: "older12",
+              parents: [],
               author: "Ada",
               date: "2026-01-01T00:00:00Z",
               title: "Seed app",
@@ -95,6 +104,9 @@ describe("loadRepositoryHistory", () => {
     expect(result.source).toBe("service");
     expect(result.repository.branch).toBe("main");
     expect(result.commits.map((commit) => commit.id)).toEqual(["older123456", "newer123456"]);
+    expect(result.commits[1].parents).toEqual(["older123456"]);
+    expect(result.graph?.edges).toEqual([{ from: "newer123456", to: "older123456" }]);
+    expect(result.graph?.heads).toEqual(["newer123456"]);
     expect(result.commits[0].snapshot).toEqual(["README.md", "src/App.tsx"]);
     expect(result.commits[1].snapshot).toEqual(["src/main.tsx"]);
     expect(result.notice).toContain("more history");
@@ -188,6 +200,7 @@ describe("loadRepositoryHistory", () => {
       if (url.endsWith("/commits/older123456")) {
         return jsonResponse({
           sha: "older123456",
+          parents: [],
           commit: {
             author: { name: "Ada", date: "2026-01-01T00:00:00Z" },
             message: "Seed app",
@@ -199,6 +212,7 @@ describe("loadRepositoryHistory", () => {
       if (url.endsWith("/commits/newer123456")) {
         return jsonResponse({
           sha: "newer123456",
+          parents: [{ sha: "older123456" }],
           commit: {
             author: { name: "Ada", date: "2026-01-02T00:00:00Z" },
             message: "Rename app entry",
@@ -236,6 +250,8 @@ describe("loadRepositoryHistory", () => {
       previousPath: "src/App.tsx",
       status: "renamed",
     });
+    expect(result.commits[1].parents).toEqual(["older123456"]);
+    expect(result.graph?.edges).toEqual([{ from: "newer123456", to: "older123456" }]);
     expect(result.commits[1].snapshot).toEqual(["src/main.tsx"]);
     expect(result.checkpoints[0]).toMatchObject({ index: 0 });
     expect(result.checkpoints.at(-1)).toMatchObject({ index: 1 });

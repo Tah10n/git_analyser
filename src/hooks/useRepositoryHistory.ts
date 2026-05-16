@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import type { ExplorerCommit, RepositorySummary } from "../types";
+import type { CommitGraph, ExplorerCommit, RepositorySummary } from "../types";
 import {
   clearHistoryCache,
   createHistoryCacheKey,
@@ -17,6 +17,7 @@ type LoadStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
 type HistoryState = {
   commits: ExplorerCommit[];
+  graph?: CommitGraph;
   repository?: RepositorySummary;
   status: LoadStatus;
   error?: string;
@@ -99,6 +100,7 @@ export const useRepositoryHistory = (initialInput: string) => {
       if (cached) {
         setState({
           commits: cached.commits,
+          graph: cached.graph,
           repository: cached.repository,
           status: cached.commits.length > 0 ? "ready" : "empty",
           rateLimit: cached.rateLimit,
@@ -118,6 +120,7 @@ export const useRepositoryHistory = (initialInput: string) => {
 
       setState({
         commits: result.commits,
+        graph: result.graph,
         repository: result.repository,
         status: result.commits.length > 0 ? "ready" : "empty",
         rateLimit: result.rateLimit,
@@ -135,6 +138,7 @@ export const useRepositoryHistory = (initialInput: string) => {
         status: "error",
         error: message,
         warning: undefined,
+        graph: undefined,
         source: undefined,
         rateLimit:
           error instanceof GitHubApiError ? error.rateLimit : current.rateLimit,
