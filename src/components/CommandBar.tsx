@@ -1,11 +1,13 @@
 import type { FormEvent } from "react";
 import type { RateLimitInfo } from "../lib/github";
-import type { RepositorySummary, ThemePreset } from "../types";
+import type { RepositoryBranch, RepositorySummary, ThemePreset } from "../types";
 import { BranchMarkIcon } from "./icons";
 
 type CommandBarProps = {
   input: string;
   token: string;
+  branches: RepositoryBranch[];
+  selectedBranch?: string;
   repository: RepositorySummary;
   modeLabel: string;
   isLoading: boolean;
@@ -13,6 +15,7 @@ type CommandBarProps = {
   theme: ThemePreset;
   onInputChange: (value: string) => void;
   onTokenChange: (value: string) => void;
+  onBranchChange: (value: string) => void;
   onThemeChange: (theme: ThemePreset) => void;
   onClearCache: () => void;
   onLoad: () => void;
@@ -35,6 +38,8 @@ const formatRate = (rateLimit?: RateLimitInfo): string | undefined => {
 export const CommandBar = ({
   input,
   token,
+  branches,
+  selectedBranch,
   repository,
   modeLabel,
   isLoading,
@@ -42,6 +47,7 @@ export const CommandBar = ({
   theme,
   onInputChange,
   onTokenChange,
+  onBranchChange,
   onThemeChange,
   onClearCache,
   onLoad,
@@ -87,7 +93,25 @@ export const CommandBar = ({
       </form>
 
       <div className="status-cluster">
-        <span>Branch {repository.branch}</span>
+        <label className="branch-picker">
+          <span>Branch</span>
+          <select
+            disabled={isLoading || branches.length === 0}
+            onChange={(event) => onBranchChange(event.target.value)}
+            value={selectedBranch ?? repository.branch}
+          >
+            {branches.length > 0 ? (
+              branches.map((branch) => (
+                <option key={branch.name} value={branch.name}>
+                  {branch.name}
+                  {branch.isDefault ? " default" : ""}
+                </option>
+              ))
+            ) : (
+              <option value={repository.branch}>{repository.branch}</option>
+            )}
+          </select>
+        </label>
         <span>{modeLabel}</span>
         {rateLabel ? <span>{rateLabel}</span> : null}
         <button className="cache-button" onClick={onClearCache} type="button">

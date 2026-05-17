@@ -1,5 +1,11 @@
 import { useCallback, useState } from "react";
-import type { CommitGraph, ExplorerCommit, RepositorySummary } from "../types";
+import type {
+  CommitGraph,
+  ExplorerCommit,
+  HistoryMode,
+  RepositoryBranch,
+  RepositorySummary,
+} from "../types";
 import {
   clearHistoryCache,
   createHistoryCacheKey,
@@ -16,8 +22,10 @@ import {
 type LoadStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
 type HistoryState = {
+  branches: RepositoryBranch[];
   commits: ExplorerCommit[];
   graph?: CommitGraph;
+  loadedInput?: string;
   repository?: RepositorySummary;
   status: LoadStatus;
   error?: string;
@@ -30,6 +38,7 @@ const tokenKey = "git-history-explorer-token";
 const maxCommits = browserLimits.maxCommits;
 const analyzerMaxCommits = browserLimits.handoffCommitCount;
 const analyzerUrl = import.meta.env.VITE_ANALYZER_URL;
+const historyMode: HistoryMode = "recent";
 
 const createSizeWarning = (
   commitCount: number,
@@ -74,7 +83,9 @@ const saveToken = (token: string): void => {
 export const useRepositoryHistory = (initialInput: string) => {
   const [input, setInput] = useState(initialInput);
   const [token, setTokenState] = useState(readSavedToken);
+  const [selectedBranch, setSelectedBranchState] = useState<string>();
   const [state, setState] = useState<HistoryState>({
+    branches: [],
     commits: [],
     status: "idle",
   });
@@ -84,9 +95,23 @@ export const useRepositoryHistory = (initialInput: string) => {
     saveToken(nextToken.trim());
   };
 
-  const load = useCallback(async () => {
+  const setRepositoryInput = (nextInput: string) => {
+    setInput(nextInput);
+    setSelectedBranchState(undefined);
+  };
+
+  const load = useCallback(async (branchOverride?: string) => {
+    const selectedBranchForInput =
+      state.loadedInput === input ? selectedBranch : undefined;
+    const branchForLoad = branchOverride ?? selectedBranchForInput ?? "";
+
     setState((current) => ({
       ...current,
+      branches: current.loadedInput === input ? current.branches : [],
+      commits: current.loadedInput === input ? current.commits : [],
+      graph: current.loadedInput === input ? current.graph : undefined,
+      loadedInput: input,
+      repository: current.loadedInput === input ? current.repository : undefined,
       status: "loading",
       error: undefined,
       warning: undefined,
@@ -94,13 +119,29 @@ export const useRepositoryHistory = (initialInput: string) => {
 
     try {
       const loadLimit = analyzerUrl ? analyzerMaxCommits : maxCommits;
-      const cacheKey = createHistoryCacheKey(`${analyzerUrl ? `service:${analyzerUrl}:` : "browser:"}${input}`, loadLimit);
+      const cachePrefix = `${analyzerUrl ? `service:${analyzerUrl}:` : "browser:"}${input}`;
+      const cacheKey = createHistoryCacheKey(
+        cachePrefix,
+        loadLimit,
+        branchForLoad,
+        historyMode,
+      );
       const cached = await getCachedHistory(cacheKey);
 
       if (cached) {
+        const cachedBranch = cached.selectedBranch ?? cached.repository.branch;
+        setSelectedBranchState(cachedBranch);
         setState({
+          branches: cached.branches ?? [
+            {
+              name: cachedBranch,
+              sha: cached.commits.at(-1)?.id ?? "",
+              isDefault: cachedBranch === cached.repository.defaultBranch,
+            },
+          ],
           commits: cached.commits,
           graph: cached.graph,
+          loadedInput: input,
           repository: cached.repository,
           status: cached.commits.length > 0 ? "ready" : "empty",
           rateLimit: cached.rateLimit,
@@ -112,15 +153,27 @@ export const useRepositoryHistory = (initialInput: string) => {
 
       const result = await loadRepositoryHistory({
         analyzerUrl,
+        branch: branchForLoad || undefined,
         input,
         token,
         maxCommits: loadLimit,
       });
-      await saveCachedHistory(cacheKey, result);
+      await saveCachedHistory(
+        createHistoryCacheKey(
+          cachePrefix,
+          loadLimit,
+          result.selectedBranch,
+          result.historyMode,
+        ),
+        result,
+      );
 
+      setSelectedBranchState(result.selectedBranch);
       setState({
+        branches: result.branches,
         commits: result.commits,
         graph: result.graph,
+        loadedInput: input,
         repository: result.repository,
         status: result.commits.length > 0 ? "ready" : "empty",
         rateLimit: result.rateLimit,
@@ -138,13 +191,25 @@ export const useRepositoryHistory = (initialInput: string) => {
         status: "error",
         error: message,
         warning: undefined,
+        loadedInput: input,
         graph: undefined,
         source: undefined,
         rateLimit:
           error instanceof GitHubApiError ? error.rateLimit : current.rateLimit,
       }));
     }
-  }, [input, token]);
+  }, [input, selectedBranch, state.loadedInput, token]);
+
+  const selectBranch = useCallback(
+    (branch: string) => {
+      if (state.repository && state.loadedInput === input) {
+        void load(branch);
+      } else {
+        setSelectedBranchState(branch);
+      }
+    },
+    [input, load, state.loadedInput, state.repository],
+  );
 
   const clearCache = useCallback(async () => {
     await clearHistoryCache();
@@ -154,12 +219,27 @@ export const useRepositoryHistory = (initialInput: string) => {
     }));
   }, []);
 
+  const isCurrentInputLoaded = state.loadedInput === input;
+
   return {
     ...state,
+    branches: isCurrentInputLoaded ? state.branches : [],
+    commits: isCurrentInputLoaded ? state.commits : [],
+    error: isCurrentInputLoaded ? state.error : undefined,
+    graph: isCurrentInputLoaded ? state.graph : undefined,
+    historyMode,
     input,
+    rateLimit: isCurrentInputLoaded ? state.rateLimit : undefined,
+    repository: isCurrentInputLoaded ? state.repository : undefined,
+    selectedBranch:
+      selectedBranch ?? (isCurrentInputLoaded ? state.repository?.branch : undefined),
+    source: isCurrentInputLoaded ? state.source : undefined,
+    status: isCurrentInputLoaded ? state.status : "idle",
     token,
-    setInput,
+    warning: isCurrentInputLoaded ? state.warning : undefined,
+    setInput: setRepositoryInput,
     setToken,
+    selectBranch,
     load,
     clearCache,
   };

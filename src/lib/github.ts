@@ -4,6 +4,7 @@ import type {
   CommitGraph,
   ExplorerCommit,
   HistoryCheckpoint,
+  RepositoryBranch,
   RepositorySummary,
 } from "../types";
 import { chooseCheckpointInterval } from "./performance";
@@ -11,6 +12,7 @@ import { chooseCheckpointInterval } from "./performance";
 export type ParsedRepository = {
   owner: string;
   name: string;
+  branch?: string;
 };
 
 export type RateLimitInfo = {
@@ -21,9 +23,12 @@ export type RateLimitInfo = {
 
 export type LoadedHistory = {
   repository: RepositorySummary;
+  branches: RepositoryBranch[];
   commits: ExplorerCommit[];
   checkpoints: HistoryCheckpoint[];
   graph?: CommitGraph;
+  selectedBranch: string;
+  historyMode: "recent";
   notice?: string;
   rateLimit?: RateLimitInfo;
   source: "browser" | "service";
@@ -43,6 +48,13 @@ type GitHubRepositoryResponse = {
 
 type GitHubCommitListItem = {
   sha: string;
+};
+
+type GitHubBranchResponse = {
+  name: string;
+  commit: {
+    sha: string;
+  };
 };
 
 type GitHubCommitFile = {
@@ -92,6 +104,11 @@ type AnalyzerCommit = {
 };
 
 type AnalyzerHistoryResult = {
+  branches?: Array<{
+    name?: string;
+    sha?: string;
+    isDefault?: boolean;
+  }>;
   commits: AnalyzerCommit[];
   graph?: CommitGraph;
   limits?: {
@@ -106,6 +123,7 @@ type AnalyzerHistoryResult = {
   };
   repository: {
     branch?: string;
+    defaultBranch?: string;
     name: string;
     owner: string;
     url: string;
@@ -142,18 +160,36 @@ export const parseRepositoryInput = (rawInput: string): ParsedRepository | null 
     return null;
   }
 
-  const urlMatch = input.match(
-    /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/\s]+)\/([^/\s#?]+)(?:[/?#].*)?$/i,
-  );
-  const shorthandMatch = input.match(/^([^/\s]+)\/([^/\s]+)$/);
-  const match = urlMatch ?? shorthandMatch;
+  const normalizedUrl = input.match(/^https?:\/\//i) ? input : `https://${input}`;
+  try {
+    const url = new URL(normalizedUrl);
+    const hostname = url.hostname.toLowerCase();
 
-  if (!match) {
+    if (hostname === "github.com" || hostname === "www.github.com") {
+      const pathParts = url.pathname.replace(/^\/+/, "").match(/[^/]+/g) ?? [];
+      const [owner, rawName, marker, ...rest] = pathParts;
+      const name = rawName?.replace(/\.git$/i, "");
+      const branch =
+        marker === "tree" && rest.length > 0
+          ? decodeURIComponent(rest.join("/"))
+          : undefined;
+
+      if (owner && name) {
+        return branch ? { owner, name, branch } : { owner, name };
+      }
+    }
+  } catch {
+    // Fall through to owner/name shorthand parsing.
+  }
+
+  const shorthandMatch = input.match(/^([^/\s]+)\/([^/\s]+)$/);
+
+  if (!shorthandMatch) {
     return null;
   }
 
-  const owner = match[1];
-  const name = match[2].replace(/\.git$/i, "");
+  const owner = shorthandMatch[1];
+  const name = shorthandMatch[2].replace(/\.git$/i, "");
 
   if (!owner || !name) {
     return null;
@@ -210,6 +246,135 @@ const requestJson = async <T>(
     data: (await response.json()) as T,
     rateLimit,
   };
+};
+
+const normalizeBranches = (
+  branches: GitHubBranchResponse[],
+  defaultBranch: string,
+): RepositoryBranch[] => {
+  const normalized = branches
+    .map((branch) => ({
+      name: branch.name,
+      sha: branch.commit.sha,
+      isDefault: branch.name === defaultBranch,
+    }))
+    .sort((left, right) => {
+      if (left.isDefault) {
+        return -1;
+      }
+
+      if (right.isDefault) {
+        return 1;
+      }
+
+      return left.name.localeCompare(right.name);
+    });
+
+  if (normalized.some((branch) => branch.name === defaultBranch)) {
+    return normalized;
+  }
+
+  return [
+    {
+      name: defaultBranch,
+      sha: "",
+      isDefault: true,
+    },
+    ...normalized,
+  ];
+};
+
+const branchHeadRefs = (
+  branches: RepositoryBranch[],
+  sha: string,
+): string[] =>
+  branches
+    .filter((branch) => branch.sha === sha)
+    .map((branch) => `refs/heads/${branch.name}`);
+
+const branchNamesForCommit = (
+  branches: RepositoryBranch[],
+  sha: string,
+  selectedBranch: string,
+): string[] => {
+  const names = branches
+    .filter((branch) => branch.sha === sha)
+    .map((branch) => branch.name);
+
+  if (!names.includes(selectedBranch)) {
+    names.push(selectedBranch);
+  }
+
+  return [...new Set(names)];
+};
+
+const resolveSelectedBranch = ({
+  branches,
+  defaultBranch,
+  requestedBranch,
+}: {
+  branches: RepositoryBranch[];
+  defaultBranch: string;
+  requestedBranch?: string;
+}): { branch: string; notice?: string } => {
+  if (!requestedBranch) {
+    return { branch: defaultBranch };
+  }
+
+  if (branches.some((branch) => branch.name === requestedBranch)) {
+    return { branch: requestedBranch };
+  }
+
+  return {
+    branch: defaultBranch,
+    notice: `Branch ${requestedBranch} was not found; loaded ${defaultBranch}.`,
+  };
+};
+
+const loadBranches = async ({
+  defaultBranch,
+  fetcher,
+  normalizedToken,
+  repoPath,
+  requestedBranch,
+}: {
+  defaultBranch: string;
+  fetcher: Fetcher;
+  normalizedToken: string;
+  repoPath: string;
+  requestedBranch?: string;
+}): Promise<{ branches: RepositoryBranch[]; rateLimit: RateLimitInfo }> => {
+  const branchResponse = await requestJson<GitHubBranchResponse[]>(
+    `${repoPath}/branches?per_page=100`,
+    normalizedToken,
+    fetcher,
+  );
+  let branches = normalizeBranches(branchResponse.data, defaultBranch);
+  let rateLimit = branchResponse.rateLimit;
+
+  if (
+    requestedBranch &&
+    !branches.some((branch) => branch.name === requestedBranch)
+  ) {
+    try {
+      const requestedBranchResponse = await requestJson<GitHubBranchResponse>(
+        `${repoPath}/branches/${encodeURIComponent(requestedBranch)}`,
+        normalizedToken,
+        fetcher,
+      );
+      branches = normalizeBranches(
+        [...branchResponse.data, requestedBranchResponse.data],
+        defaultBranch,
+      );
+      rateLimit = requestedBranchResponse.rateLimit;
+    } catch (error) {
+      if (!(error instanceof GitHubApiError && error.status === 404)) {
+        throw error;
+      }
+    }
+  }
+
+  return { branches, rateLimit };
 };
 
 const normalizeStatus = (status: string): ChangeStatus => {
@@ -280,6 +445,7 @@ const createCheckpoints = (
       index % interval === 0 ||
       index === commits.length - 1
     ) {
+      commit.checkpointIndex = index;
       checkpoints.push({
         index,
         snapshot: commit.snapshot,
@@ -335,6 +501,21 @@ const toBrowserUrl = (parsed: ParsedRepository): string =>
 
 const mapAnalyzerHistory = (data: AnalyzerHistoryResult): LoadedHistory => {
   const branch = data.ref?.selected ?? data.ref?.requested ?? data.repository.branch ?? "HEAD";
+  const defaultBranch = data.repository.defaultBranch ?? branch;
+  const branches =
+    data.branches?.length
+      ? data.branches.map((candidate) => ({
+          name: candidate.name ?? branch,
+          sha: candidate.sha ?? "",
+          isDefault: Boolean(candidate.isDefault ?? candidate.name === defaultBranch),
+        }))
+      : [
+          {
+            name: branch,
+            sha: data.commits[0]?.id ?? "",
+            isDefault: branch === defaultBranch,
+          },
+        ];
   const paths = new Set<string>();
   let maxFileCount = 0;
   const commits = [...data.commits].reverse().map((commit): ExplorerCommit => {
@@ -349,12 +530,17 @@ const mapAnalyzerHistory = (data: AnalyzerHistoryResult): LoadedHistory => {
 
     return {
       id: commit.id,
+      fullSha: commit.id,
       shortHash: commit.shortHash || shortHash(commit.id),
+      title: commit.title,
       message: commit.title,
       author: commit.author,
       date: commit.date,
       branch,
+      parentShas: commit.parents ?? [],
       parents: commit.parents ?? [],
+      refs: branchHeadRefs(branches, commit.id),
+      branches: branchNamesForCommit(branches, commit.id, branch),
       changes,
       snapshot: [...paths].sort((left, right) => left.localeCompare(right)),
     };
@@ -367,13 +553,17 @@ const mapAnalyzerHistory = (data: AnalyzerHistoryResult): LoadedHistory => {
       name: data.repository.name,
       url: data.repository.url,
       branch,
+      defaultBranch,
     },
+    branches,
     commits,
     checkpoints: createCheckpoints(
       commits,
       chooseCheckpointInterval(commits.length, maxFileCount),
     ),
     graph: data.graph ?? buildGraphFromCommits(commits),
+    selectedBranch: branch,
+    historyMode: "recent",
     notice: truncated
       ? `Analyzer service returned ${commits.length.toLocaleString()} commits; more history is available on the backend.`
       : `Analyzer service loaded ${commits.length.toLocaleString()} commits.`,
@@ -384,12 +574,14 @@ const mapAnalyzerHistory = (data: AnalyzerHistoryResult): LoadedHistory => {
 
 const loadRepositoryHistoryFromAnalyzer = async ({
   analyzerUrl,
+  branch,
   input,
   maxCommits,
   parsed,
   fetcher,
 }: {
   analyzerUrl: string;
+  branch?: string;
   input: string;
   maxCommits: number;
   parsed: ParsedRepository;
@@ -398,8 +590,9 @@ const loadRepositoryHistoryFromAnalyzer = async ({
   const response = await fetcher(`${analyzerUrl}/history/analyze`, {
     body: JSON.stringify({
       allHistory: true,
+      ref: branch,
       maxCommits,
-      url: input.trim().startsWith("http") ? input.trim() : toBrowserUrl(parsed),
+      url: toBrowserUrl(parsed),
     }),
     headers: { "content-type": "application/json" },
     method: "POST",
@@ -422,12 +615,14 @@ const loadRepositoryHistoryFromAnalyzer = async ({
 
 export const loadRepositoryHistory = async ({
   analyzerUrl,
+  branch,
   input,
   token = "",
   maxCommits = 20,
   fetcher = fetch,
 }: {
   analyzerUrl?: string;
+  branch?: string;
   input: string;
   token?: string;
   maxCommits?: number;
@@ -439,11 +634,13 @@ export const loadRepositoryHistory = async ({
     throw new GitHubApiError("Enter a valid GitHub repository.", 0);
   }
 
+  const requestedBranch = branch ?? parsed.branch;
   const normalizedAnalyzerUrl = analyzerBaseUrl(analyzerUrl);
   if (normalizedAnalyzerUrl) {
     try {
       return await loadRepositoryHistoryFromAnalyzer({
         analyzerUrl: normalizedAnalyzerUrl,
+        branch: requestedBranch,
         input,
         maxCommits,
         parsed,
@@ -462,9 +659,23 @@ export const loadRepositoryHistory = async ({
     fetcher,
   );
   const repository = repoResponse.data;
-  const branch = repository.default_branch;
+  const defaultBranch = repository.default_branch;
+  const branchResult = await loadBranches({
+    defaultBranch,
+    fetcher,
+    normalizedToken,
+    repoPath,
+    requestedBranch,
+  });
+  const branches = branchResult.branches;
+  const selected = resolveSelectedBranch({
+    branches,
+    defaultBranch,
+    requestedBranch,
+  });
+  const selectedBranch = selected.branch;
   const commitListResponse = await requestJson<GitHubCommitListItem[]>(
-    `${repoPath}/commits?sha=${encodeURIComponent(branch)}&per_page=${maxCommits}`,
+    `${repoPath}/commits?sha=${encodeURIComponent(selectedBranch)}&per_page=${maxCommits}`,
     normalizedToken,
     fetcher,
   );
@@ -476,14 +687,19 @@ export const loadRepositoryHistory = async ({
         owner: repository.owner.login,
         name: repository.name,
         url: repository.html_url,
-        branch,
+        branch: selectedBranch,
+        defaultBranch,
       },
+      branches,
       commits: [],
       checkpoints: [],
       rateLimit: commitListResponse.rateLimit,
       source: "browser",
       treeFileCount: 0,
       graph: buildGraphFromCommits([]),
+      selectedBranch,
+      historyMode: "recent",
+      notice: selected.notice,
     };
   }
 
@@ -514,7 +730,9 @@ export const loadRepositoryHistory = async ({
 
     commits.push({
       id: detail.sha,
+      fullSha: detail.sha,
       shortHash: shortHash(detail.sha),
+      title: detail.commit.message.match(/[^\r\n]+/)?.[0] ?? shortHash(detail.sha),
       message: detail.commit.message.match(/[^\r\n]+/)?.[0] ?? shortHash(detail.sha),
       author:
         detail.commit.author?.name ??
@@ -524,8 +742,11 @@ export const loadRepositoryHistory = async ({
         detail.commit.author?.date ??
         detail.commit.committer?.date ??
         new Date(0).toISOString(),
-      branch,
+      branch: selectedBranch,
+      parentShas: (detail.parents ?? []).map((parent) => parent.sha),
       parents: (detail.parents ?? []).map((parent) => parent.sha),
+      refs: branchHeadRefs(branches, detail.sha),
+      branches: branchNamesForCommit(branches, detail.sha, selectedBranch),
       changes,
       snapshot: [...paths].sort((left, right) => left.localeCompare(right)),
     });
@@ -536,18 +757,24 @@ export const loadRepositoryHistory = async ({
       owner: repository.owner.login,
       name: repository.name,
       url: repository.html_url,
-      branch,
+      branch: selectedBranch,
+      defaultBranch,
     },
+    branches,
     commits,
     checkpoints: createCheckpoints(
       commits,
       chooseCheckpointInterval(commits.length, maxFileCount),
     ),
     graph: buildGraphFromCommits(commits),
-    notice: normalizedAnalyzerUrl
-      ? "Analyzer service was unavailable; loaded the browser GitHub API fallback."
-      : undefined,
-    rateLimit: treeResponse.rateLimit,
+    selectedBranch,
+    historyMode: "recent",
+    notice:
+      selected.notice ??
+      (normalizedAnalyzerUrl
+        ? "Analyzer service was unavailable; loaded the browser GitHub API fallback."
+        : undefined),
+    rateLimit: treeResponse.rateLimit ?? branchResult.rateLimit,
     source: "browser",
     treeFileCount: maxFileCount,
   };

@@ -11,14 +11,28 @@ export type CommitChange = {
 
 export type ExplorerCommit = {
   id: string;
+  fullSha: string;
   shortHash: string;
+  title: string;
   message: string;
   author: string;
   date: string;
   branch: string;
-  parents?: string[];
+  parentShas: string[];
+  parents: string[];
+  refs: string[];
+  branches: string[];
   changes: CommitChange[];
   snapshot: string[];
+  checkpointIndex?: number;
+};
+
+export type HistoryMode = "recent";
+
+export type RepositoryBranch = {
+  name: string;
+  sha: string;
+  isDefault: boolean;
 };
 
 export type RepositorySummary = {
@@ -26,6 +40,7 @@ export type RepositorySummary = {
   name: string;
   url: string;
   branch: string;
+  defaultBranch: string;
 };
 
 export type HistoryCheckpoint = {

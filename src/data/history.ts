@@ -1,20 +1,40 @@
-import type { ExplorerCommit } from "../types";
+import type { ExplorerCommit, RepositoryBranch } from "../types";
 
 export const repository = {
   owner: "open-source",
   name: "git-history-explorer",
   url: "https://github.com/open-source/git-history-explorer",
   branch: "main",
+  defaultBranch: "main",
 };
+
+export const branches: RepositoryBranch[] = [
+  {
+    name: "main",
+    sha: "3bc8a7748d1f9b2c65a9f7c2a1e6d5b447c89120",
+    isDefault: true,
+  },
+  {
+    name: "feature/graph",
+    sha: "b6f31294f0d85e23c0d27d2c9eab3d6b21f8a782",
+    isDefault: false,
+  },
+];
 
 export const commits: ExplorerCommit[] = [
   {
-    id: "c1",
+    id: "8b19c2a7b409d84b35c6731e5f1d8c6b7a2f9011",
+    fullSha: "8b19c2a7b409d84b35c6731e5f1d8c6b7a2f9011",
     shortHash: "8b19c2a",
+    title: "Initialize app shell",
     message: "Initialize app shell",
     author: "Mira Chen",
     date: "2026-04-02T10:16:00Z",
     branch: "main",
+    parentShas: [],
+    parents: [],
+    refs: [],
+    branches: ["main", "feature/graph"],
     changes: [
       {
         path: "src/App.tsx",
@@ -35,12 +55,18 @@ export const commits: ExplorerCommit[] = [
     snapshot: ["package.json", "src/App.tsx", "src/styles.css"],
   },
   {
-    id: "c2",
+    id: "12f6ad4c2351bb807d41bfb7d0aa8e2b5f6d1204",
+    fullSha: "12f6ad4c2351bb807d41bfb7d0aa8e2b5f6d1204",
     shortHash: "12f6ad4",
+    title: "Add typed sample history",
     message: "Add typed sample history",
     author: "Jon Bell",
     date: "2026-04-04T13:48:00Z",
     branch: "main",
+    parentShas: ["8b19c2a7b409d84b35c6731e5f1d8c6b7a2f9011"],
+    parents: ["8b19c2a7b409d84b35c6731e5f1d8c6b7a2f9011"],
+    refs: [],
+    branches: ["main", "feature/graph"],
     changes: [
       {
         path: "src/data/history.ts",
@@ -67,12 +93,18 @@ export const commits: ExplorerCommit[] = [
     ],
   },
   {
-    id: "c3",
+    id: "9ac42ef53a5d97e3587e996b5c08a3e54c2d6f70",
+    fullSha: "9ac42ef53a5d97e3587e996b5c08a3e54c2d6f70",
     shortHash: "9ac42ef",
+    title: "Render tree playback",
     message: "Render tree playback",
     author: "Mira Chen",
     date: "2026-04-07T09:22:00Z",
     branch: "main",
+    parentShas: ["12f6ad4c2351bb807d41bfb7d0aa8e2b5f6d1204"],
+    parents: ["12f6ad4c2351bb807d41bfb7d0aa8e2b5f6d1204"],
+    refs: [],
+    branches: ["main"],
     changes: [
       {
         path: "src/components/FileTree.tsx",
@@ -101,12 +133,18 @@ export const commits: ExplorerCommit[] = [
     ],
   },
   {
-    id: "c4",
+    id: "fe40712a9f83b0f5240fd0df61a71de85063dc22",
+    fullSha: "fe40712a9f83b0f5240fd0df61a71de85063dc22",
     shortHash: "fe40712",
+    title: "Rename tree utilities",
     message: "Rename tree utilities",
     author: "Ari Singh",
     date: "2026-04-10T16:03:00Z",
-    branch: "main",
+    branch: "feature/graph",
+    parentShas: ["12f6ad4c2351bb807d41bfb7d0aa8e2b5f6d1204"],
+    parents: ["12f6ad4c2351bb807d41bfb7d0aa8e2b5f6d1204"],
+    refs: [],
+    branches: ["main", "feature/graph"],
     changes: [
       {
         path: "src/lib/buildTree.ts",
@@ -131,22 +169,28 @@ export const commits: ExplorerCommit[] = [
     ],
   },
   {
-    id: "c5",
-    shortHash: "d55e903",
-    message: "Remove unused global styles",
-    author: "Jon Bell",
-    date: "2026-04-12T11:37:00Z",
-    branch: "main",
+    id: "b6f31294f0d85e23c0d27d2c9eab3d6b21f8a782",
+    fullSha: "b6f31294f0d85e23c0d27d2c9eab3d6b21f8a782",
+    shortHash: "b6f3129",
+    title: "Draft graph metadata",
+    message: "Draft graph metadata",
+    author: "Ari Singh",
+    date: "2026-04-13T14:42:00Z",
+    branch: "feature/graph",
+    parentShas: ["fe40712a9f83b0f5240fd0df61a71de85063dc22"],
+    parents: ["fe40712a9f83b0f5240fd0df61a71de85063dc22"],
+    refs: ["refs/heads/feature/graph"],
+    branches: ["main", "feature/graph"],
     changes: [
       {
-        path: "src/styles.css",
-        status: "deleted",
-        summary: "Delete obsolete global stylesheet",
+        path: "src/lib/graph.ts",
+        status: "added",
+        summary: "Add branch graph metadata helpers",
       },
       {
-        path: "src/App.tsx",
+        path: "src/types.ts",
         status: "modified",
-        summary: "Move layout styles into component modules",
+        summary: "Describe parent and ref fields",
       },
     ],
     snapshot: [
@@ -155,16 +199,66 @@ export const commits: ExplorerCommit[] = [
       "src/components/FileTree.tsx",
       "src/data/history.ts",
       "src/lib/buildTree.ts",
+      "src/lib/graph.ts",
+      "src/styles.css",
       "src/types.ts",
     ],
   },
   {
-    id: "c6",
+    id: "d55e9036bdab71905e8f4e63b8470cd9c76b8514",
+    fullSha: "d55e9036bdab71905e8f4e63b8470cd9c76b8514",
+    shortHash: "d55e903",
+    title: "Merge graph metadata",
+    message: "Merge graph metadata",
+    author: "Jon Bell",
+    date: "2026-04-15T11:37:00Z",
+    branch: "main",
+    parentShas: [
+      "9ac42ef53a5d97e3587e996b5c08a3e54c2d6f70",
+      "b6f31294f0d85e23c0d27d2c9eab3d6b21f8a782",
+    ],
+    parents: [
+      "9ac42ef53a5d97e3587e996b5c08a3e54c2d6f70",
+      "b6f31294f0d85e23c0d27d2c9eab3d6b21f8a782",
+    ],
+    refs: [],
+    branches: ["main"],
+    changes: [
+      {
+        path: "src/App.tsx",
+        status: "modified",
+        summary: "Read graph metadata from loaded history",
+      },
+      {
+        path: "src/lib/graph.ts",
+        status: "modified",
+        summary: "Connect graph metadata to the timeline",
+      },
+    ],
+    snapshot: [
+      "package.json",
+      "src/App.tsx",
+      "src/components/FileTree.tsx",
+      "src/data/history.ts",
+      "src/lib/buildTree.ts",
+      "src/lib/graph.ts",
+      "src/styles.css",
+      "src/types.ts",
+    ],
+  },
+  {
+    id: "3bc8a7748d1f9b2c65a9f7c2a1e6d5b447c89120",
+    fullSha: "3bc8a7748d1f9b2c65a9f7c2a1e6d5b447c89120",
     shortHash: "3bc8a77",
+    title: "Polish playback controls",
     message: "Polish playback controls",
     author: "Mira Chen",
     date: "2026-04-15T18:20:00Z",
     branch: "main",
+    parentShas: ["d55e9036bdab71905e8f4e63b8470cd9c76b8514"],
+    parents: ["d55e9036bdab71905e8f4e63b8470cd9c76b8514"],
+    refs: ["refs/heads/main"],
+    branches: ["main"],
     changes: [
       {
         path: "src/components/Timeline.tsx",
@@ -189,6 +283,8 @@ export const commits: ExplorerCommit[] = [
       "src/components/Timeline.tsx",
       "src/data/history.ts",
       "src/lib/buildTree.ts",
+      "src/lib/graph.ts",
+      "src/styles.css",
       "src/types.ts",
     ],
   },

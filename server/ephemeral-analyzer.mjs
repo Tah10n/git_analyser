@@ -34,6 +34,20 @@ const normalizeCommitLimit = (value) => {
   return Math.min(Math.floor(requested), maxCommits);
 };
 
+const normalizeRef = (value) => {
+  const ref = String(value ?? "").trim();
+
+  if (!ref) {
+    return undefined;
+  }
+
+  if (ref.length > 240 || /[\s~^:?*[\\]/.test(ref) || ref.includes("..")) {
+    throw new Error("Use a valid branch name.");
+  }
+
+  return ref;
+};
+
 const writeLine = (response, type, payload = {}) => {
   response.write(`${JSON.stringify({ type, ...payload })}\n`);
 };
@@ -84,9 +98,10 @@ const parseLog = (output) => {
       const fields = line.slice(marker.length).match(/[^\u001f]+/g) ?? [];
       current = {
         id: fields[0] ?? "",
-        author: fields[1] ?? "",
-        date: fields[2] ?? "",
-        message: fields[3] ?? "",
+        parents: fields[1]?.match(/\S+/g) ?? [],
+        author: fields[2] ?? "",
+        date: fields[3] ?? "",
+        title: fields[4] ?? "",
         changes: [],
       };
       commits.push(current);
@@ -133,20 +148,28 @@ const readJsonBody = (request) =>
 const analyze = async (payload, response) => {
   const repository = parseRepositoryUrl(payload.url);
   const limit = normalizeCommitLimit(payload.maxCommits);
+  const ref = normalizeRef(payload.ref);
   const root = await mkdtemp(join(tmpdir(), "git-history-"));
   const repoDir = join(root, "repo");
 
   try {
-    writeLine(response, "status", { message: "cloning", limit });
-    await run("git", [
+    writeLine(response, "status", { message: "cloning", limit, ref });
+    const cloneArgs = [
       "clone",
       "--filter=blob:none",
       "--no-checkout",
       "--single-branch",
       "--depth",
       String(limit),
-      repository.cloneUrl,
-      repoDir,
+    ];
+
+    if (ref) {
+      cloneArgs.push("--branch", ref);
+    }
+
+    cloneArgs.push(repository.cloneUrl, repoDir);
+    await run("git", [
+      ...cloneArgs,
     ]);
 
     writeLine(response, "status", { message: "reading-history" });
@@ -155,7 +178,7 @@ const analyze = async (payload, response) => {
       repoDir,
       "log",
       "--name-status",
-      `--format=${marker}%H%x1f%an%x1f%aI%x1f%s`,
+      `--format=${marker}%H%x1f%P%x1f%an%x1f%aI%x1f%s`,
       "-n",
       String(limit),
     ]);
@@ -165,6 +188,12 @@ const analyze = async (payload, response) => {
       repository: {
         owner: repository.owner,
         name: repository.name,
+        branch: ref,
+        url: `https://github.com/${repository.owner}/${repository.name}`,
+      },
+      ref: {
+        requested: ref,
+        selected: ref,
       },
       commits,
     });
@@ -187,7 +216,11 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (request.method !== "POST" || request.url !== "/analyze") {
+  const isAnalyzeRequest =
+    request.method === "POST" &&
+    (request.url === "/analyze" || request.url === "/history/analyze");
+
+  if (!isAnalyzeRequest) {
     sendJson(response, 404, { error: "Not found" });
     return;
   }
@@ -213,14 +246,18 @@ const selfTest = () => {
   const parsed = parseRepositoryUrl("https://github.com/acme/tool.git");
   const limit = normalizeCommitLimit(10_000);
   const parsedLog = parseLog(
-    `${marker}abc\u001fAda\u001f2026-01-01T00:00:00Z\u001fInit\nA\tREADME.md\nR100\told.ts\tnew.ts`,
+    `${marker}abc\u001fdef ghi\u001fAda\u001f2026-01-01T00:00:00Z\u001fInit\nA\tREADME.md\nR100\told.ts\tnew.ts`,
   );
 
-  if (parsed.owner !== "acme" || limit !== maxCommits) {
+  if (parsed.owner !== "acme" || limit !== maxCommits || normalizeRef("feature/test") !== "feature/test") {
     throw new Error("Analyzer guardrail self-test failed.");
   }
 
-  if (parsedLog[0]?.changes.length !== 2) {
+  if (
+    parsedLog[0]?.changes.length !== 2 ||
+    parsedLog[0]?.parents.length !== 2 ||
+    parsedLog[0]?.title !== "Init"
+  ) {
     throw new Error("Analyzer log self-test failed.");
   }
 

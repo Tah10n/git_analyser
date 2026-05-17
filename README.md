@@ -1,14 +1,15 @@
 # Git History Explorer
 
 Git History Explorer is an IDE-like browser app for inspecting how a GitHub
-repository changes over time. Paste a GitHub URL or `owner/name`, load the
-default branch, and scrub through commits while the file tree and change list
-update together.
+repository changes over time. Paste a GitHub URL or `owner/name`, choose a
+branch, and scrub through commits while the file tree and change list update
+together.
 
 ## Features
 
 - GitHub URL and `owner/name` input.
-- Bounded default-branch history loading through the GitHub REST API.
+- Bounded selected-branch history loading through the GitHub REST API.
+- Repository branch loading with a branch picker and default-branch fallback.
 - Static demo data fallback when no repository has been loaded.
 - Optional browser-local GitHub token for higher API limits.
 - IDE-style file tree with folder/file icons and change badges.
@@ -38,12 +39,14 @@ Open the printed local Vite URL in a browser.
 
 ## Loading A Repository
 
-1. Enter a GitHub repository as `owner/name` or
-   `https://github.com/owner/name`.
+1. Enter a GitHub repository as `owner/name`,
+   `https://github.com/owner/name`, or a branch URL such as
+   `https://github.com/owner/name/tree/feature`.
 2. Optionally enter a GitHub personal access token. The app stores it in
    `localStorage` and only sends it to `api.github.com`.
 3. Press **Load**.
-4. Use the timeline, file tree, and commit panel to inspect the loaded history.
+4. Use the branch picker to switch between loaded repository branches.
+5. Use the timeline, file tree, and commit panel to inspect the loaded history.
 
 The browser path intentionally loads a bounded commit window. When a repository
 is too large for comfortable browser use, the app shows a warning instead of
@@ -51,8 +54,8 @@ freezing the interface.
 
 ## Interface Guide
 
-- **Command bar**: repository input, token field, theme switcher, API rate
-  display, and cache clearing.
+- **Command bar**: repository input, token field, branch picker, theme switcher,
+  API rate display, and cache clearing.
 - **File tree**: searchable tree for the selected commit. Folders start
   collapsed, folders containing current commit changes open automatically, and
   each folder can be opened or closed manually. Enable **Changed only** to show
@@ -99,6 +102,7 @@ Analyze a repository:
 ```powershell
 $body = @{
   url = "https://github.com/owner/name"
+  ref = "main"
   maxCommits = 200
 } | ConvertTo-Json
 
@@ -132,6 +136,8 @@ the browser-only path as a fallback.
   reset.
 - **Repository stays on demo data**: check the repository input format and press
   **Load** again.
+- **Branch falls back to the default**: confirm the selected branch still exists
+  on GitHub and reload.
 - **No WebM file is produced**: try Chrome or Edge and confirm the browser
   supports `MediaRecorder`.
 - **Large tree warning**: use a smaller repository, reduce the commit window in

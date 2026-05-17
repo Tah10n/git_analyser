@@ -24,6 +24,11 @@ describe("parseRepositoryInput", () => {
       owner: "acme",
       name: "tool",
     });
+    expect(parseRepositoryInput("https://github.com/acme/tool/tree/feature/graph")).toEqual({
+      owner: "acme",
+      name: "tool",
+      branch: "feature/graph",
+    });
     expect(parseRepositoryInput("acme/tool")).toEqual({
       owner: "acme",
       name: "tool",
@@ -131,6 +136,12 @@ describe("loadRepositoryHistory", () => {
         });
       }
 
+      if (url.endsWith("/repos/acme/tool/branches?per_page=100")) {
+        return jsonResponse([
+          { name: "main", commit: { sha: "seed123456" } },
+        ]);
+      }
+
       if (url.includes("/commits?")) {
         return jsonResponse([{ sha: "seed123456" }]);
       }
@@ -182,6 +193,13 @@ describe("loadRepositoryHistory", () => {
           name: "tool",
           owner: { login: "acme" },
         });
+      }
+
+      if (url.endsWith("/repos/acme/tool/branches?per_page=100")) {
+        return jsonResponse([
+          { name: "main", commit: { sha: "newer123456" } },
+          { name: "feature/graph", commit: { sha: "feature123456" } },
+        ]);
       }
 
       if (url.includes("/commits?")) {
@@ -242,8 +260,21 @@ describe("loadRepositoryHistory", () => {
       name: "tool",
       url: "https://github.com/acme/tool",
       branch: "main",
+      defaultBranch: "main",
     });
+    expect(result.branches.map((branch) => branch.name)).toEqual([
+      "main",
+      "feature/graph",
+    ]);
+    expect(result.selectedBranch).toBe("main");
+    expect(result.historyMode).toBe("recent");
     expect(result.commits).toHaveLength(2);
+    expect(result.commits[1]).toMatchObject({
+      fullSha: "newer123456",
+      title: "Rename app entry",
+      refs: ["refs/heads/main"],
+      branches: ["main"],
+    });
     expect(result.commits[0].snapshot).toEqual(["README.md", "src/App.tsx"]);
     expect(result.commits[1].changes[0]).toMatchObject({
       path: "src/main.tsx",
@@ -259,6 +290,184 @@ describe("loadRepositoryHistory", () => {
     expect(calls.every((call) => call.authorization === "Bearer test-token")).toBe(
       true,
     );
+  });
+
+  it("loads a requested branch and falls back to the default when it is missing", async () => {
+    const commitListUrls: string[] = [];
+    const fetcher = async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/repos/acme/tool")) {
+        return jsonResponse({
+          default_branch: "main",
+          html_url: "https://github.com/acme/tool",
+          name: "tool",
+          owner: { login: "acme" },
+        });
+      }
+
+      if (url.endsWith("/repos/acme/tool/branches?per_page=100")) {
+        return jsonResponse([
+          { name: "main", commit: { sha: "main123456" } },
+          { name: "feature/graph", commit: { sha: "feature123456" } },
+        ]);
+      }
+
+      if (url.endsWith("/repos/acme/tool/branches/missing")) {
+        return jsonResponse({ message: "not found" }, 404);
+      }
+
+      if (url.includes("/commits?")) {
+        commitListUrls.push(url);
+        return jsonResponse([{ sha: "feature123456" }]);
+      }
+
+      if (url.endsWith("/git/trees/feature123456?recursive=1")) {
+        return jsonResponse({ tree: [{ path: "feature.md", type: "blob" }] });
+      }
+
+      if (url.endsWith("/commits/feature123456")) {
+        return jsonResponse({
+          sha: "feature123456",
+          parents: [{ sha: "seed123456" }],
+          commit: {
+            author: { name: "Ada", date: "2026-01-03T00:00:00Z" },
+            message: "Branch work",
+          },
+          files: [{ filename: "feature.md", status: "added" }],
+        });
+      }
+
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const selected = await loadRepositoryHistory({
+      input: "acme/tool",
+      branch: "feature/graph",
+      fetcher,
+    });
+
+    expect(commitListUrls[0]).toContain("sha=feature%2Fgraph");
+    expect(selected.repository.branch).toBe("feature/graph");
+    expect(selected.commits[0].branches).toContain("feature/graph");
+    expect(selected.commits[0].refs).toEqual(["refs/heads/feature/graph"]);
+
+    commitListUrls.length = 0;
+    const fallback = await loadRepositoryHistory({
+      input: "acme/tool",
+      branch: "missing",
+      fetcher,
+    });
+
+    expect(commitListUrls[0]).toContain("sha=main");
+    expect(fallback.repository.branch).toBe("main");
+    expect(fallback.notice).toContain("was not found");
+  });
+
+  it("loads a requested branch that is not in the first branch page", async () => {
+    const calls: string[] = [];
+    const fetcher = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+
+      if (url.endsWith("/repos/acme/tool")) {
+        return jsonResponse({
+          default_branch: "main",
+          html_url: "https://github.com/acme/tool",
+          name: "tool",
+          owner: { login: "acme" },
+        });
+      }
+
+      if (url.endsWith("/repos/acme/tool/branches?per_page=100")) {
+        return jsonResponse([
+          { name: "main", commit: { sha: "main123456" } },
+        ]);
+      }
+
+      if (url.endsWith("/repos/acme/tool/branches/release%2Fv1")) {
+        return jsonResponse({
+          name: "release/v1",
+          commit: { sha: "release123456" },
+        });
+      }
+
+      if (url.includes("/commits?")) {
+        return jsonResponse([{ sha: "release123456" }]);
+      }
+
+      if (url.endsWith("/git/trees/release123456?recursive=1")) {
+        return jsonResponse({ tree: [{ path: "release.md", type: "blob" }] });
+      }
+
+      if (url.endsWith("/commits/release123456")) {
+        return jsonResponse({
+          sha: "release123456",
+          parents: [{ sha: "main123456" }],
+          commit: {
+            author: { name: "Ada", date: "2026-01-04T00:00:00Z" },
+            message: "Prepare release",
+          },
+          files: [{ filename: "release.md", status: "added" }],
+        });
+      }
+
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const result = await loadRepositoryHistory({
+      input: "https://github.com/acme/tool/tree/release/v1",
+      fetcher,
+    });
+
+    expect(calls).toContain(
+      "https://api.github.com/repos/acme/tool/branches/release%2Fv1",
+    );
+    expect(result.repository.branch).toBe("release/v1");
+    expect(result.branches.map((branch) => branch.name)).toEqual([
+      "main",
+      "release/v1",
+    ]);
+    expect(result.commits[0].refs).toEqual(["refs/heads/release/v1"]);
+  });
+
+  it("maps local analyzer-shaped commits with titles", async () => {
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          type: "result",
+          repository: {
+            owner: "acme",
+            name: "tool",
+            url: "https://github.com/acme/tool",
+            branch: "main",
+          },
+          ref: { requested: "main", selected: "main" },
+          commits: [
+            {
+              id: "abcdef123456",
+              parents: [],
+              author: "Ada",
+              date: "2026-01-01T00:00:00Z",
+              title: "Seed app",
+              changes: [{ path: "README.md", status: "added" }],
+            },
+          ],
+        }),
+      );
+
+    const result = await loadRepositoryHistory({
+      analyzerUrl: "http://127.0.0.1:8787",
+      input: "acme/tool",
+      branch: "main",
+      fetcher,
+    });
+
+    expect(result.commits[0]).toMatchObject({
+      message: "Seed app",
+      shortHash: "abcdef1",
+      title: "Seed app",
+    });
   });
 
   it("surfaces rate limit failures", async () => {

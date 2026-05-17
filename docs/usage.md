@@ -25,9 +25,16 @@ Use the repository field to load real data:
 - `owner/name`
 - `https://github.com/owner/name`
 - `https://github.com/owner/name.git`
+- `https://github.com/owner/name/tree/feature`
 
-The app loads the default branch, fetches a bounded set of commits, normalizes
+The app loads repository branches, starts with the default branch unless the
+input URL names another branch, fetches a bounded set of commits, normalizes
 changed files, and reconstructs file-tree snapshots for timeline navigation.
+
+Use the branch picker in the command bar to switch branches without clearing the
+repository input, token, theme, or cache controls. If the requested branch is not
+available, the app falls back to the repository default branch and shows a
+warning.
 
 ## Token Handling
 
@@ -64,8 +71,9 @@ The tree renders a virtualized row window so large trees remain responsive.
 
 ## Cache Workflow
 
-Loaded histories are cached in IndexedDB using the repository input and commit
-limit as the cache key. Repeat loads reuse cached data when possible.
+Loaded histories are cached in IndexedDB using the repository input, selected
+branch, history mode, and commit limit as the cache key. Repeat loads reuse
+cached data when possible.
 
 Use **Clear cache** to remove cached histories. This does not remove the saved
 token.
@@ -93,11 +101,12 @@ The endpoint listens on `http://127.0.0.1:8787`.
 ```powershell
 $body = @{
   url = "https://github.com/owner/name"
+  ref = "main"
   maxCommits = 200
 } | ConvertTo-Json
 
 Invoke-WebRequest `
-  -Uri http://127.0.0.1:8787/analyze `
+  -Uri http://127.0.0.1:8787/history/analyze `
   -Method POST `
   -ContentType "application/json" `
   -Body $body

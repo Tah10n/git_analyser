@@ -232,6 +232,7 @@ h3 {
 }
 
 .status-cluster span,
+.branch-picker,
 .hash-badge,
 .cache-button {
   display: inline-flex;
@@ -245,6 +246,28 @@ h3 {
   font-size: 0.76rem;
   font-weight: 650;
   white-space: nowrap;
+}
+
+.branch-picker {
+  gap: 7px;
+  padding-right: 6px;
+}
+
+.branch-picker span {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.branch-picker select {
+  max-width: 180px;
+  min-width: 104px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.76rem;
 }
 
 .cache-button {

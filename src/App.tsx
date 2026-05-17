@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CommandBar } from "./components/CommandBar";
 import { CommitPanel } from "./components/CommitPanel";
 import { FileTree } from "./components/FileTree";
 import { StatusBanner } from "./components/StatusBanner";
 import { Timeline } from "./components/Timeline";
-import { commits, repository } from "./data/history";
+import { branches, commits, repository } from "./data/history";
 import { useRepositoryHistory } from "./hooks/useRepositoryHistory";
+import { getBranchScopedCommits, getPreservedCommitIndex } from "./lib/branches";
 import { buildTree } from "./lib/buildTree";
 import { recordTimelineWebm } from "./lib/exportVideo";
 import type { ThemePreset } from "./types";
@@ -20,18 +21,34 @@ type ExportState =
 
 export const App = () => {
   const history = useRepositoryHistory(repository.url);
-  const activeCommits = history.commits.length > 0 ? history.commits : commits;
-  const activeRepository = history.repository ?? repository;
+  const selectedBranch = history.selectedBranch ?? repository.branch;
+  const demoCommits = useMemo(
+    () => getBranchScopedCommits(commits, selectedBranch),
+    [selectedBranch],
+  );
+  const activeCommits =
+    history.commits.length > 0
+      ? history.commits
+      : demoCommits.length > 0
+        ? demoCommits
+        : commits;
+  const activeRepository = history.repository ?? {
+    ...repository,
+    branch: selectedBranch,
+  };
+  const activeBranches = history.branches.length > 0 ? history.branches : branches;
   const [currentIndex, setCurrentIndex] = useState(activeCommits.length - 1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [theme, setTheme] = useState<ThemePreset>("dark");
+  const selectedCommitId = useRef<string | undefined>(undefined);
   const [exportState, setExportState] = useState<ExportState>({
     status: "idle",
     progress: 0,
   });
 
-  const currentCommit = activeCommits[currentIndex] ?? activeCommits[0];
+  const currentCommit =
+    activeCommits[currentIndex] ?? activeCommits.at(-1) ?? activeCommits[0];
   const currentCommitPaths = useMemo(
     () =>
       currentCommit.changes.flatMap((change) =>
@@ -63,9 +80,18 @@ export const App = () => {
   }, [activeCommits.length, isPlaying, speed]);
 
   useEffect(() => {
-    setCurrentIndex(activeCommits.length - 1);
+    const nextIndex = getPreservedCommitIndex(
+      activeCommits,
+      selectedCommitId.current,
+    );
+
+    setCurrentIndex(nextIndex >= 0 ? nextIndex : activeCommits.length - 1);
     setIsPlaying(false);
   }, [activeCommits]);
+
+  useEffect(() => {
+    selectedCommitId.current = currentCommit.id;
+  }, [currentCommit.id]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -124,9 +150,12 @@ export const App = () => {
   return (
     <main className="app-shell">
       <CommandBar
+        branches={activeBranches}
         input={history.input}
         isLoading={history.status === "loading"}
         modeLabel={modeLabel}
+        selectedBranch={selectedBranch}
+        onBranchChange={history.selectBranch}
         onInputChange={history.setInput}
         onClearCache={history.clearCache}
         onLoad={history.load}

@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { getCommitGraphNodeRoles, getMarkerPositionPercent } from "./Timeline";
+import type { ExplorerCommit } from "../types";
+
+const commit = (
+  id: string,
+  parents: string[] = [],
+  branch = "main",
+): ExplorerCommit => ({
+  id,
+  fullSha: id,
+  shortHash: id.slice(0, 7),
+  title: id,
+  message: id,
+  author: "Ada",
+  date: "2026-01-01T00:00:00Z",
+  branch,
+  parentShas: parents,
+  parents,
+  refs: [],
+  branches: [branch],
+  changes: [],
+  snapshot: [],
+});
 
 describe("getMarkerPositionPercent", () => {
   it("keeps a single-commit timeline marker in bounds", () => {
@@ -16,26 +38,8 @@ describe("getMarkerPositionPercent", () => {
 describe("getCommitGraphNodeRoles", () => {
   it("keeps old cached commits without parents on a linear graph", () => {
     const roles = getCommitGraphNodeRoles([
-      {
-        id: "first",
-        shortHash: "first",
-        message: "First",
-        author: "Ada",
-        date: "2026-01-01T00:00:00Z",
-        branch: "main",
-        changes: [],
-        snapshot: [],
-      },
-      {
-        id: "second",
-        shortHash: "second",
-        message: "Second",
-        author: "Ada",
-        date: "2026-01-02T00:00:00Z",
-        branch: "main",
-        changes: [],
-        snapshot: [],
-      },
+      commit("first"),
+      commit("second"),
     ]);
 
     expect(roles[0].className).toContain("is-root");
@@ -48,39 +52,9 @@ describe("getCommitGraphNodeRoles", () => {
   it("labels service graph roots, heads, and merges", () => {
     const roles = getCommitGraphNodeRoles(
       [
-        {
-          id: "root",
-          shortHash: "root",
-          message: "Root",
-          author: "Ada",
-          date: "2026-01-01T00:00:00Z",
-          branch: "main",
-          parents: [],
-          changes: [],
-          snapshot: [],
-        },
-        {
-          id: "left",
-          shortHash: "left",
-          message: "Left",
-          author: "Ada",
-          date: "2026-01-02T00:00:00Z",
-          branch: "main",
-          parents: ["root"],
-          changes: [],
-          snapshot: [],
-        },
-        {
-          id: "merge",
-          shortHash: "merge",
-          message: "Merge",
-          author: "Ada",
-          date: "2026-01-03T00:00:00Z",
-          branch: "main",
-          parents: ["left", "right"],
-          changes: [],
-          snapshot: [],
-        },
+        commit("root"),
+        commit("left", ["root"]),
+        commit("merge", ["left", "right"]),
       ],
       {
         edges: [

@@ -1,4 +1,5 @@
 import type { LoadedHistory } from "./github";
+import type { HistoryMode } from "../types";
 
 const dbName = "git-history-explorer-cache";
 const storeName = "histories";
@@ -45,8 +46,18 @@ const withStore = async <T>(
   });
 };
 
-export const createHistoryCacheKey = (input: string, maxCommits: number): string =>
-  `${input.trim().toLowerCase()}::${maxCommits}`;
+export const createHistoryCacheKey = (
+  input: string,
+  maxCommits: number,
+  branch: string,
+  historyMode: HistoryMode,
+): string =>
+  [
+    input.trim().toLowerCase(),
+    branch.trim().toLowerCase() || "default",
+    historyMode,
+    String(maxCommits),
+  ].join("::");
 
 export const getCachedHistory = async (
   key: string,
