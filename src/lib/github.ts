@@ -85,6 +85,7 @@ type GitHubTreeResponse = {
     path?: string;
     type?: string;
   }>;
+  truncated?: boolean;
 };
 
 type AnalyzerChange = {
@@ -713,13 +714,25 @@ export const loadRepositoryHistory = async ({
   let maxFileCount = paths.size;
   const commits: ExplorerCommit[] = [];
 
-  for (const [index, item] of orderedList.entries()) {
-    const detailResponse = await requestJson<GitHubCommitDetail>(
-      `${repoPath}/commits/${item.sha}`,
-      normalizedToken,
-      fetcher,
+  const batchSize = 6;
+  const details: GitHubCommitDetail[] = new Array(orderedList.length);
+  for (let i = 0; i < orderedList.length; i += batchSize) {
+    const chunk = orderedList.slice(i, i + batchSize);
+    const chunkResults = await Promise.all(
+      chunk.map((item) =>
+        requestJson<GitHubCommitDetail>(
+          `${repoPath}/commits/${item.sha}`,
+          normalizedToken,
+          fetcher,
+        ),
+      ),
     );
-    const detail = detailResponse.data;
+    for (let j = 0; j < chunkResults.length; j += 1) {
+      details[i + j] = chunkResults[j].data;
+    }
+  }
+
+  for (const [index, detail] of details.entries()) {
     const changes = (detail.files ?? []).map(normalizeChange);
 
     if (index > 0) {
@@ -752,6 +765,10 @@ export const loadRepositoryHistory = async ({
     });
   }
 
+  const truncatedNotice = treeResponse.data.truncated
+    ? "Repository tree exceeds GitHub API size limit; some files may not be visible."
+    : undefined;
+
   return {
     repository: {
       owner: repository.owner.login,
@@ -771,6 +788,7 @@ export const loadRepositoryHistory = async ({
     historyMode: "recent",
     notice:
       selected.notice ??
+      truncatedNotice ??
       (normalizedAnalyzerUrl
         ? "Analyzer service was unavailable; loaded the browser GitHub API fallback."
         : undefined),

@@ -203,14 +203,27 @@ const analyze = async (payload, response) => {
   }
 };
 
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type, authorization",
+};
+
 const sendJson = (response, status, body) => {
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
+    ...corsHeaders,
   });
   response.end(JSON.stringify(body));
 };
 
 const server = createServer(async (request, response) => {
+  if (request.method === "OPTIONS") {
+    response.writeHead(204, corsHeaders);
+    response.end();
+    return;
+  }
+
   if (request.method === "GET" && request.url === "/health") {
     sendJson(response, 200, { ok: true });
     return;
@@ -228,6 +241,7 @@ const server = createServer(async (request, response) => {
   response.writeHead(200, {
     "content-type": "application/x-ndjson; charset=utf-8",
     "cache-control": "no-store",
+    ...corsHeaders,
   });
 
   try {

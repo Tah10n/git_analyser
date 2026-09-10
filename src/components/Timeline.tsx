@@ -4,7 +4,6 @@ import type { CommitGraph, ExplorerCommit } from "../types";
 type TimelineProps = {
   commits: ExplorerCommit[];
   currentIndex: number;
-  graph?: CommitGraph;
   isPlaying: boolean;
   speed: number;
   exportState: {
@@ -102,7 +101,6 @@ export const getCommitGraphNodeRoles = (
 export const Timeline = ({
   commits,
   currentIndex,
-  graph,
   isPlaying,
   speed,
   exportState,
@@ -113,69 +111,78 @@ export const Timeline = ({
   onSpeedChange,
   onExport,
 }: TimelineProps) => {
-  const graphNodeRoles = getCommitGraphNodeRoles(commits, graph);
+  const progress =
+    commits.length <= 1 ? 0 : (currentIndex / (commits.length - 1)) * 100;
+  const currentCommit = commits[currentIndex];
 
   return (
-    <section className="timeline-shell" aria-label="Commit timeline">
+    <section
+      className="timeline-shell"
+      aria-label="Таймлайн коммитов"
+      data-od-id="timeline-transport"
+    >
       <div className="timeline-controls">
-        <button className="icon-button" type="button" onClick={onPrevious} aria-label="Previous commit">
+        <button
+          aria-label="Предыдущий коммит"
+          className="icon-button"
+          disabled={currentIndex === 0}
+          onClick={onPrevious}
+          type="button"
+        >
           <PreviousIcon />
         </button>
-        <button className="play-button" type="button" onClick={onTogglePlayback}>
+        <button
+          aria-pressed={isPlaying}
+          className="play-button"
+          data-od-id="play-timeline"
+          onClick={onTogglePlayback}
+          type="button"
+        >
           {isPlaying ? <PauseIcon /> : <PlayIcon />}
-          <span>{isPlaying ? "Pause" : "Play"}</span>
+          <span>{isPlaying ? "Пауза" : "Воспроизвести"}</span>
         </button>
-        <button className="icon-button" type="button" onClick={onNext} aria-label="Next commit">
+        <button
+          aria-label="Следующий коммит"
+          className="icon-button"
+          disabled={currentIndex === commits.length - 1}
+          onClick={onNext}
+          type="button"
+        >
           <NextIcon />
         </button>
       </div>
 
       <div className="scrubber">
         <input
-          aria-label="Selected commit"
+          aria-label="Позиция в истории"
+          aria-valuetext={
+            currentCommit
+              ? `${currentIndex + 1} из ${commits.length}: ${currentCommit.title}`
+              : undefined
+          }
           max={commits.length - 1}
           min={0}
           onChange={(event) => onSelect(Number(event.target.value))}
+          style={
+            {
+              "--timeline-progress": `${progress}%`,
+            } as React.CSSProperties
+          }
           type="range"
           value={currentIndex}
         />
-        <div className="commit-markers" aria-hidden="true">
-          {commits.map((commit, index) => (
-            <button
-              className={index === currentIndex ? "is-active" : ""}
-              key={commit.id}
-              onClick={() => onSelect(index)}
-              style={{ left: getMarkerPositionPercent(index, commits.length) }}
-              tabIndex={-1}
-              type="button"
-            />
-          ))}
-        </div>
-        <div className="commit-graph" aria-label="Branch graph">
-          {graphNodeRoles.map((node, index) => (
-            <button
-              aria-label={node.label}
-              className={node.className}
-              key={node.id}
-              onClick={() => onSelect(index)}
-              style={{ left: getMarkerPositionPercent(index, commits.length) }}
-              type="button"
-            >
-              <span>{node.parentCount > 1 ? node.parentCount : ""}</span>
-            </button>
-          ))}
-        </div>
       </div>
 
-      <div className="speed-group" aria-label="Playback speed">
+      <div className="speed-group" aria-label="Скорость воспроизведения">
         {speedOptions.map((option) => (
           <button
+            aria-pressed={speed === option}
             className={speed === option ? "is-selected" : ""}
             key={option}
             onClick={() => onSpeedChange(option)}
             type="button"
           >
-            {option}x
+            {option}×
           </button>
         ))}
       </div>
@@ -188,12 +195,12 @@ export const Timeline = ({
           type="button"
         >
           {exportState.status === "recording"
-            ? `Exporting ${exportState.progress}%`
-            : "Export WebM"}
+            ? `Экспорт ${exportState.progress}%`
+            : "Экспорт WebM"}
         </button>
         {exportState.status === "ready" ? (
           <a className="export-link" download="git-history-explorer.webm" href={exportState.url}>
-            WebM ready
+            Скачать WebM
           </a>
         ) : null}
         {exportState.status === "error" ? (

@@ -8,7 +8,7 @@ export const StatusBanner = ({ status, error, warning }: StatusBannerProps) => {
   if (warning && (status === "idle" || status === "ready")) {
     return (
       <section className="status-banner is-warning" role="status">
-        <strong>Notice</strong>
+        <strong>Обратите внимание</strong>
         <span>{warning}</span>
       </section>
     );
@@ -20,16 +20,16 @@ export const StatusBanner = ({ status, error, warning }: StatusBannerProps) => {
 
   const copy = {
     loading: {
-      title: "Loading repository history",
-      body: "Fetching metadata, commits, changed files, and the seed tree.",
+      title: "Загружаем историю",
+      body: "Получаем метаданные, коммиты, изменения и дерево файлов.",
     },
     empty: {
-      title: "No commits returned",
-      body: "The selected branch did not return commits for this bounded window.",
+      title: "Коммиты не найдены",
+      body: "В выбранном окне истории этой ветки нет коммитов.",
     },
     error: {
-      title: "GitHub request failed",
-      body: error ?? "Unable to load repository history.",
+      title: "Ошибка GitHub",
+      body: error ?? "Не удалось загрузить историю репозитория.",
     },
   }[status];
 

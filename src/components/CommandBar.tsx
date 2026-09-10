@@ -1,6 +1,10 @@
 import type { FormEvent } from "react";
 import type { RateLimitInfo } from "../lib/github";
-import type { RepositoryBranch, RepositorySummary, ThemePreset } from "../types";
+import type {
+  RepositoryBranch,
+  RepositorySummary,
+  ThemePreset,
+} from "../types";
 import { BranchMarkIcon } from "./icons";
 
 type CommandBarProps = {
@@ -13,18 +17,20 @@ type CommandBarProps = {
   isLoading: boolean;
   rateLimit?: RateLimitInfo;
   theme: ThemePreset;
+  repositoryOpen: boolean;
   onInputChange: (value: string) => void;
   onTokenChange: (value: string) => void;
   onBranchChange: (value: string) => void;
   onThemeChange: (theme: ThemePreset) => void;
   onClearCache: () => void;
   onLoad: () => void;
+  onToggleRepository: () => void;
 };
 
 const themeOptions: Array<{ label: string; value: ThemePreset }> = [
-  { label: "Dark", value: "dark" },
-  { label: "Light", value: "light" },
-  { label: "JetBrains", value: "jetbrains" },
+  { label: "Тёмная", value: "dark" },
+  { label: "Светлая", value: "light" },
+  { label: "IDE", value: "jetbrains" },
 ];
 
 const formatRate = (rateLimit?: RateLimitInfo): string | undefined => {
@@ -32,7 +38,7 @@ const formatRate = (rateLimit?: RateLimitInfo): string | undefined => {
     return undefined;
   }
 
-  return `Rate ${rateLimit.remaining}/${rateLimit.limit}`;
+  return `${rateLimit.remaining}/${rateLimit.limit} запросов`;
 };
 
 export const CommandBar = ({
@@ -45,57 +51,47 @@ export const CommandBar = ({
   isLoading,
   rateLimit,
   theme,
+  repositoryOpen,
   onInputChange,
   onTokenChange,
   onBranchChange,
   onThemeChange,
   onClearCache,
   onLoad,
+  onToggleRepository,
 }: CommandBarProps) => {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     onLoad();
   };
-
   const rateLabel = formatRate(rateLimit);
 
   return (
-    <header className="command-bar">
+    <header className="command-bar" data-od-id="application-header">
       <div className="brand-lockup">
-        <span className="brand-mark">
+        <span className="brand-mark" aria-hidden="true">
           <BranchMarkIcon />
         </span>
         <div>
-          <h1>Git History Explorer</h1>
-          <p>{repository.owner}/{repository.name}</p>
+          <h1>Git Analyzer</h1>
+          <p>chronograph / 01</p>
         </div>
       </div>
 
       <form className="repo-form" onSubmit={submit}>
         <label className="repo-input">
-          <span>Repository</span>
+          <span className="sr-only">Репозиторий</span>
           <input
+            aria-label="Репозиторий GitHub"
             onChange={(event) => onInputChange(event.target.value)}
+            placeholder="owner/repository"
             value={input}
           />
         </label>
-        <label className="token-input">
-          <span>Token</span>
-          <input
-            onChange={(event) => onTokenChange(event.target.value)}
-            type="password"
-            value={token}
-          />
-        </label>
-        <button className="load-button" disabled={isLoading} type="submit">
-          {isLoading ? "Loading" : "Load"}
-        </button>
-      </form>
-
-      <div className="status-cluster">
         <label className="branch-picker">
-          <span>Branch</span>
+          <span className="sr-only">Ветка</span>
           <select
+            aria-label="Ветка"
             disabled={isLoading || branches.length === 0}
             onChange={(event) => onBranchChange(event.target.value)}
             value={selectedBranch ?? repository.branch}
@@ -104,7 +100,7 @@ export const CommandBar = ({
               branches.map((branch) => (
                 <option key={branch.name} value={branch.name}>
                   {branch.name}
-                  {branch.isDefault ? " default" : ""}
+                  {branch.isDefault ? " · default" : ""}
                 </option>
               ))
             ) : (
@@ -112,25 +108,73 @@ export const CommandBar = ({
             )}
           </select>
         </label>
-        <span>{modeLabel}</span>
-        {rateLabel ? <span>{rateLabel}</span> : null}
-        <button className="cache-button" onClick={onClearCache} type="button">
-          Clear cache
+        <button
+          className="load-button"
+          data-od-id="load-repository"
+          disabled={isLoading}
+          type="submit"
+        >
+          {isLoading ? "Загрузка…" : "Загрузить"}
         </button>
+      </form>
+
+      <div className="source-status" aria-live="polite">
+        <span className="source-label">Источник · {modeLabel}</span>
+        <strong>
+          <i aria-hidden="true" />
+          {repository.owner}/{repository.name}
+        </strong>
       </div>
 
-      <div className="theme-switch" aria-label="Theme">
-        {themeOptions.map((option) => (
+      <button
+        aria-expanded={repositoryOpen}
+        className="repository-toggle"
+        data-od-id="repository-mobile-toggle"
+        onClick={onToggleRepository}
+        type="button"
+      >
+        Репозиторий
+      </button>
+
+      <details className="utility-menu">
+        <summary>Настройки</summary>
+        <div className="utility-popover">
+          <label className="token-input">
+            <span>GitHub token</span>
+            <input
+              autoComplete="off"
+              onChange={(event) => onTokenChange(event.target.value)}
+              placeholder="Необязательно"
+              type="password"
+              value={token}
+            />
+          </label>
+          <div className="theme-field">
+            <span>Тема</span>
+            <div className="theme-switch" aria-label="Тема" role="group">
+              {themeOptions.map((option) => (
+                <button
+                  aria-pressed={theme === option.value}
+                  className={theme === option.value ? "is-selected" : ""}
+                  key={option.value}
+                  onClick={() => onThemeChange(option.value)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {rateLabel ? <span className="rate-label">{rateLabel}</span> : null}
           <button
-            className={theme === option.value ? "is-selected" : ""}
-            key={option.value}
-            onClick={() => onThemeChange(option.value)}
+            className="cache-button"
+            onClick={onClearCache}
             type="button"
           >
-            {option.label}
+            Очистить кэш
           </button>
-        ))}
-      </div>
+        </div>
+      </details>
     </header>
   );
 };

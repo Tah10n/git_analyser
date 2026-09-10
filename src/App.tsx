@@ -41,6 +41,7 @@ export const App = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [theme, setTheme] = useState<ThemePreset>("dark");
+  const [isRepositoryOpen, setIsRepositoryOpen] = useState(false);
   const selectedCommitId = useRef<string | undefined>(undefined);
   const [exportState, setExportState] = useState<ExportState>({
     status: "idle",
@@ -96,6 +97,22 @@ export const App = () => {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  useEffect(() => {
+    const closeRepository = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsRepositoryOpen(false);
+    };
+    const closeOnDesktop = () => {
+      if (window.innerWidth > 820) setIsRepositoryOpen(false);
+    };
+
+    document.addEventListener("keydown", closeRepository);
+    window.addEventListener("resize", closeOnDesktop);
+    return () => {
+      document.removeEventListener("keydown", closeRepository);
+      window.removeEventListener("resize", closeOnDesktop);
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -161,8 +178,10 @@ export const App = () => {
         onLoad={history.load}
         onTokenChange={history.setToken}
         onThemeChange={setTheme}
+        onToggleRepository={() => setIsRepositoryOpen((open) => !open)}
         rateLimit={history.rateLimit}
         repository={activeRepository}
+        repositoryOpen={isRepositoryOpen}
         theme={theme}
         token={history.token}
       />
@@ -173,15 +192,32 @@ export const App = () => {
         warning={history.warning}
       />
 
-      <section className="explorer-layout">
-        <FileTree changedPaths={currentCommitPaths} nodes={tree} />
-        <CommitPanel commit={currentCommit} index={currentIndex} total={activeCommits.length} />
+      <section
+        className={`workbench ${isRepositoryOpen ? "is-repository-open" : ""}`}
+      >
+        <FileTree
+          changedPaths={currentCommitPaths}
+          nodes={tree}
+          onClose={() => setIsRepositoryOpen(false)}
+        />
+        <button
+          aria-label="Закрыть дерево файлов"
+          className="repository-scrim"
+          onClick={() => setIsRepositoryOpen(false)}
+          type="button"
+        />
+        <CommitPanel
+          commits={activeCommits}
+          currentIndex={currentIndex}
+          graph={history.graph}
+          isLoading={history.status === "loading"}
+          onSelect={selectCommit}
+        />
       </section>
 
       <Timeline
         commits={activeCommits}
         currentIndex={currentIndex}
-        graph={history.graph}
         isPlaying={isPlaying}
         onNext={goNext}
         onPrevious={goPrevious}

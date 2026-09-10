@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { getChangeTone } from "../lib/buildTree";
 import type { TreeNode } from "../types";
 import { ChevronRightIcon, FileIcon, FolderIcon } from "./icons";
@@ -6,6 +6,7 @@ import { ChevronRightIcon, FileIcon, FolderIcon } from "./icons";
 type FileTreeProps = {
   changedPaths: string[];
   nodes: TreeNode[];
+  onClose?: () => void;
 };
 
 export type TreeExpansion = Map<string, boolean>;
@@ -14,7 +15,7 @@ type FlatTreeNode = TreeNode & {
   isExpanded: boolean;
 };
 
-const rowHeight = 34;
+const rowHeight = 46;
 const overscan = 6;
 
 const flattenNodes = (nodes: TreeNode[]): TreeNode[] =>
@@ -141,7 +142,7 @@ const TreeRow = ({
       <span className="tree-indent" />
       {canToggle ? (
         <button
-          aria-label={`${node.isExpanded ? "Collapse" : "Expand"} ${node.path}`}
+          aria-label={`${node.isExpanded ? "Свернуть" : "Развернуть"} ${node.path}`}
           className={`tree-expander ${node.isExpanded ? "is-expanded" : ""}`}
           onClick={() => onToggle(node)}
           type="button"
@@ -158,12 +159,13 @@ const TreeRow = ({
   );
 };
 
-export const FileTree = ({ changedPaths, nodes }: FileTreeProps) => (
-  <VirtualFileTree changedPaths={changedPaths} nodes={nodes} />
+export const FileTree = ({ changedPaths, nodes, onClose }: FileTreeProps) => (
+  <VirtualFileTree changedPaths={changedPaths} nodes={nodes} onClose={onClose} />
 );
 
-const VirtualFileTree = ({ changedPaths, nodes }: FileTreeProps) => {
+const VirtualFileTree = ({ changedPaths, nodes, onClose }: FileTreeProps) => {
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [changedOnly, setChangedOnly] = useState(false);
   const [manualExpansion, setManualExpansion] = useState<TreeExpansion>(
     () => new Map(),
@@ -172,7 +174,7 @@ const VirtualFileTree = ({ changedPaths, nodes }: FileTreeProps) => {
   const [viewportHeight, setViewportHeight] = useState(420);
   const listRef = useRef<HTMLDivElement>(null);
   const flatNodes = useMemo(() => flattenNodes(nodes), [nodes]);
-  const normalizedQuery = query.trim().toLowerCase();
+  const normalizedQuery = deferredQuery.trim().toLowerCase();
   const autoExpandedPaths = useMemo(
     () => createAutoExpandedPaths(changedPaths),
     [changedPaths],
@@ -209,7 +211,17 @@ const VirtualFileTree = ({ changedPaths, nodes }: FileTreeProps) => {
   useEffect(() => {
     listRef.current?.scrollTo({ top: 0 });
     setScrollTop(0);
-  }, [changedOnly, query]);
+  }, [changedOnly, deferredQuery]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const updateHeight = () => setViewportHeight(list.clientHeight);
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(list);
+    updateHeight();
+    return () => observer.disconnect();
+  }, []);
 
   const toggleNode = (node: FlatTreeNode) => {
     setManualExpansion((current) => {
@@ -220,31 +232,41 @@ const VirtualFileTree = ({ changedPaths, nodes }: FileTreeProps) => {
   };
 
   return (
-    <div className="panel tree-panel">
+    <aside className="repo-rail" data-od-id="repository-file-tree">
       <div className="panel-header tree-header">
         <div>
-          <h2>File Tree</h2>
+          <span className="eyebrow">Репозиторий</span>
+          <h2>Структура файлов</h2>
           <p>
-            {visibleNodes.length} visible / {flatNodes.length} total
+            {visibleNodes.length} видно · {flatNodes.length} всего
           </p>
         </div>
-        <div className="tree-tools">
-          <label className="tree-search">
-            <span>Search</span>
-            <input
-              onChange={(event) => setQuery(event.target.value)}
-              value={query}
-            />
-          </label>
-          <label className="changed-toggle">
-            <input
-              checked={changedOnly}
-              onChange={(event) => setChangedOnly(event.target.checked)}
-              type="checkbox"
-            />
-            <span>Changed only</span>
-          </label>
-        </div>
+        <button
+          aria-label="Закрыть дерево файлов"
+          className="rail-close"
+          onClick={onClose}
+          type="button"
+        >
+          Закрыть
+        </button>
+      </div>
+      <div className="tree-tools">
+        <label className="tree-search">
+          <span>Поиск по пути</span>
+          <input
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Например, src/components"
+            value={query}
+          />
+        </label>
+        <label className="changed-toggle">
+          <input
+            checked={changedOnly}
+            onChange={(event) => setChangedOnly(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Только изменённые</span>
+        </label>
       </div>
       <div
         className="tree-list"
@@ -267,9 +289,9 @@ const VirtualFileTree = ({ changedPaths, nodes }: FileTreeProps) => {
             </div>
           </div>
         ) : (
-          <div className="empty-tree">No files match</div>
+          <div className="empty-tree">Файлы не найдены</div>
         )}
       </div>
-    </div>
+    </aside>
   );
 };

@@ -492,4 +492,51 @@ describe("loadRepositoryHistory", () => {
       },
     });
   });
+
+  it("surfaces a notice when GitHub tree is truncated", async () => {
+    const fetcher = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/repos/acme/tool")) {
+        return jsonResponse({
+          default_branch: "main",
+          html_url: "https://github.com/acme/tool",
+          name: "tool",
+          owner: { login: "acme" },
+        });
+      }
+      if (url.endsWith("/repos/acme/tool/branches?per_page=100")) {
+        return jsonResponse([
+          { name: "main", commit: { sha: "abc123456" } },
+        ]);
+      }
+      if (url.includes("/commits?")) {
+        return jsonResponse([{ sha: "abc123456" }]);
+      }
+      if (url.endsWith("/git/trees/abc123456?recursive=1")) {
+        return jsonResponse({
+          tree: [{ path: "README.md", type: "blob" }],
+          truncated: true,
+        });
+      }
+      if (url.endsWith("/commits/abc123456")) {
+        return jsonResponse({
+          sha: "abc123456",
+          parents: [],
+          commit: {
+            author: { name: "Ada", date: "2026-01-01T00:00:00Z" },
+            message: "Seed app",
+          },
+          files: [{ filename: "README.md", status: "added" }],
+        });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const result = await loadRepositoryHistory({
+      input: "acme/tool",
+      fetcher,
+    });
+
+    expect(result.notice).toContain("exceeds GitHub API size limit");
+  });
 });

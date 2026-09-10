@@ -116,28 +116,55 @@ export const recordTimelineWebm = async (
   const stream = canvas.captureStream(30);
   const recorder = new MediaRecorder(stream, { mimeType: mimeType() });
   const chunks: BlobPart[] = [];
+  let isAborted = false;
+
+  const cleanupStream = () => {
+    stream.getTracks().forEach((track) => track.stop());
+  };
+
   const done = new Promise<Blob>((resolve, reject) => {
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         chunks.push(event.data);
       }
     };
-    recorder.onerror = () => reject(new Error("WebM recorder failed."));
-    recorder.onstop = () => resolve(new Blob(chunks, { type: "video/webm" }));
+    recorder.onerror = () => {
+      isAborted = true;
+      cleanupStream();
+      reject(new Error("WebM recorder failed."));
+    };
+    recorder.onstop = () => {
+      cleanupStream();
+      resolve(new Blob(chunks, { type: "video/webm" }));
+    };
   });
 
   recorder.start();
 
-  for (const [index, commit] of commits.entries()) {
-    drawFrame(context, commit, index, commits.length);
-    onProgress({
-      current: index + 1,
-      total: commits.length,
-      percent: Math.round(((index + 1) / commits.length) * 100),
-    });
-    await wait(frameMs);
+  try {
+    for (const [index, commit] of commits.entries()) {
+      if (isAborted || recorder.state === "inactive") {
+        break;
+      }
+      drawFrame(context, commit, index, commits.length);
+      onProgress({
+        current: index + 1,
+        total: commits.length,
+        percent: Math.round(((index + 1) / commits.length) * 100),
+      });
+      await wait(frameMs);
+    }
+  } catch (error) {
+    isAborted = true;
+    if (recorder.state !== "inactive") {
+      recorder.stop();
+    }
+    cleanupStream();
+    throw error;
   }
 
-  recorder.stop();
+  if (recorder.state !== "inactive") {
+    recorder.stop();
+  }
   return done;
 };
