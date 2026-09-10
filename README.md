@@ -25,6 +25,7 @@ together.
 
 - Node.js 20.19+ or 22.12+.
 - npm 10 or newer.
+- Git for the optional analyzer and the test suite.
 - A modern Chromium, Firefox, or Safari browser.
 - GitHub API access from the browser.
 
@@ -51,6 +52,11 @@ Open the printed local Vite URL in a browser.
 The browser path intentionally loads a bounded commit window. When a repository
 is too large for comfortable browser use, the app shows a warning instead of
 freezing the interface.
+
+File trees follow each commit's first parent, so parallel histories stay separate.
+The loader follows paginated file changes; if a commit reaches GitHub's 3,000-file
+listing cap, it loads that commit's tree separately and warns that the change list
+may be incomplete. GitHub's recursive tree size limit still applies.
 
 ## Interface Guide
 
@@ -117,6 +123,11 @@ The response is newline-delimited JSON with progress messages and a final
 result. When configured, the app uses the service for larger history loads,
 renders the returned branch graph data without extra parent lookups, and keeps
 the browser-only path as a fallback.
+
+Analyzer responses can include a `snapshot` array of file paths on each commit.
+Snapshots are required for merges and commits whose parent is outside the returned
+window. The bundled analyzer supplies them. Older services without those snapshots
+fall back to the bounded browser loader.
 
 ## Scripts
 

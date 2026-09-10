@@ -684,14 +684,14 @@ h2 {
   text-transform: uppercase;
 }
 
-.workspace {
+.history-view {
   min-width: 0;
   min-height: 0;
   overflow: auto;
   background: var(--bg);
 }
 
-.workspace-header {
+.history-view-header {
   display: flex;
   min-height: 118px;
   align-items: end;
@@ -701,7 +701,7 @@ h2 {
   border-bottom: 1px solid var(--border);
 }
 
-.workspace-header h1 {
+.history-view-header h1 {
   max-width: 22ch;
   margin-top: 10px;
   font-size: clamp(28px, 2.5vw, 44px);
@@ -1361,7 +1361,7 @@ h2 {
     pointer-events: auto;
   }
 
-  .workspace,
+  .history-view,
   .commit-inspector {
     grid-column: 1;
     overflow: visible;
@@ -1411,13 +1411,13 @@ h2 {
     display: none;
   }
 
-  .workspace-header {
+  .history-view-header {
     min-height: 104px;
     align-items: center;
     padding: 18px 16px;
   }
 
-  .workspace-header h1 {
+  .history-view-header h1 {
     max-width: 18ch;
     font-size: clamp(24px, 8vw, 34px);
   }

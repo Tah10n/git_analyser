@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   CommitGraph,
   ExplorerCommit,
@@ -81,6 +81,10 @@ const saveToken = (token: string): void => {
 };
 
 export const useRepositoryHistory = (initialInput: string) => {
+  const loadVersion = useRef(0);
+  useEffect(() => () => {
+    loadVersion.current += 1;
+  }, []);
   const [input, setInput] = useState(initialInput);
   const [token, setTokenState] = useState(readSavedToken);
   const [selectedBranch, setSelectedBranchState] = useState<string>();
@@ -96,11 +100,19 @@ export const useRepositoryHistory = (initialInput: string) => {
   };
 
   const setRepositoryInput = (nextInput: string) => {
+    if (nextInput === input) return;
+    loadVersion.current += 1;
     setInput(nextInput);
     setSelectedBranchState(undefined);
+    setState((current) => current.status === "loading" ? {
+      ...current,
+      status: current.commits.length > 0 ? "ready" : current.repository ? "empty" : "idle",
+    } : current);
   };
 
   const load = useCallback(async (branchOverride?: string) => {
+    const version = ++loadVersion.current;
+    const isCurrent = () => version === loadVersion.current;
     const selectedBranchForInput =
       state.loadedInput === input ? selectedBranch : undefined;
     const branchForLoad = branchOverride ?? selectedBranchForInput ?? "";
@@ -127,6 +139,7 @@ export const useRepositoryHistory = (initialInput: string) => {
         historyMode,
       );
       const cached = await getCachedHistory(cacheKey);
+      if (!isCurrent()) return;
 
       if (cached) {
         const cachedBranch = cached.selectedBranch ?? cached.repository.branch;
@@ -158,6 +171,7 @@ export const useRepositoryHistory = (initialInput: string) => {
         token,
         maxCommits: loadLimit,
       });
+      if (!isCurrent()) return;
       await saveCachedHistory(
         createHistoryCacheKey(
           cachePrefix,
@@ -167,6 +181,7 @@ export const useRepositoryHistory = (initialInput: string) => {
         ),
         result,
       );
+      if (!isCurrent()) return;
 
       setSelectedBranchState(result.selectedBranch);
       setState({
@@ -181,6 +196,7 @@ export const useRepositoryHistory = (initialInput: string) => {
         warning: createSizeWarning(result.commits.length, result.treeFileCount, result.notice),
       });
     } catch (error) {
+      if (!isCurrent()) return;
       const message =
         error instanceof GitHubApiError || error instanceof Error
           ? error.message

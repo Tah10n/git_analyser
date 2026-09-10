@@ -8,6 +8,7 @@ import type {
   RepositorySummary,
 } from "../types";
 import { chooseCheckpointInterval } from "./performance";
+import { browserLimits } from "./limits";
 
 export type ParsedRepository = {
   owner: string;
@@ -38,6 +39,7 @@ export type LoadedHistory = {
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 type GitHubRepositoryResponse = {
+  id: number;
   default_branch: string;
   html_url: string;
   name: string;
@@ -64,6 +66,7 @@ type GitHubCommitFile = {
 };
 
 type GitHubCommitDetail = {
+  filesTruncated?: boolean;
   sha: string;
   parents?: Array<{ sha: string }>;
   commit: {
@@ -95,6 +98,7 @@ type AnalyzerChange = {
 };
 
 type AnalyzerCommit = {
+  snapshot?: string[];
   author: string;
   changes: AnalyzerChange[];
   date: string;
@@ -221,7 +225,7 @@ const requestJson = async <T>(
   path: string,
   token: string,
   fetcher: Fetcher,
-): Promise<{ data: T; rateLimit: RateLimitInfo }> => {
+): Promise<{ data: T; rateLimit: RateLimitInfo; link: string | null }> => {
   const headers: Record<string, string> = {
     Accept: requestHeaders.accept,
     "X-GitHub-Api-Version": requestHeaders.apiVersion,
@@ -246,7 +250,44 @@ const requestJson = async <T>(
   return {
     data: (await response.json()) as T,
     rateLimit,
+    link: response.headers.get("link"),
   };
+};
+
+const loadCommitDetail = async (
+  path: string,
+  token: string,
+  fetcher: Fetcher,
+  repositoryId: number,
+): Promise<GitHubCommitDetail> => {
+  let response = await requestJson<GitHubCommitDetail>(path, token, fetcher);
+  const detail = { ...response.data, files: [...(response.data.files ?? [])] };
+  const visited = new Set<string>([path]);
+  while (response.link) {
+    const next = response.link.match(/<([^>]+)>;\s*rel="next"/)?.[1];
+    if (!next) break;
+    if (detail.files.length >= 3000 || visited.size >= 100) {
+      detail.filesTruncated = true;
+      break;
+    }
+    const url = new URL(next, apiBase);
+    const sha = path.slice(path.lastIndexOf("/") + 1);
+    const canonicalPath = `/repositories/${repositoryId}/commits/${sha}`;
+    const nextPath = `${path}${url.search}`;
+    // GitHub links may use the repository's numeric ID. Keep requests on the
+    // original endpoint after verifying that the link identifies this commit.
+    if (url.origin !== apiBase ||
+        (url.pathname !== path && url.pathname !== canonicalPath) ||
+        visited.has(nextPath)) {
+      throw new GitHubApiError("Invalid commit file pagination response.", 0);
+    }
+    visited.add(nextPath);
+    response = await requestJson<GitHubCommitDetail>(nextPath, token, fetcher);
+    detail.files.push(...(response.data.files ?? []));
+  }
+  // GitHub caps the complete listing at 3000, even without another page link.
+  detail.filesTruncated ||= detail.files.length >= 3000;
+  return detail;
 };
 
 const normalizeBranches = (
@@ -414,7 +455,10 @@ const normalizeChange = (file: GitHubCommitFile): CommitChange => {
   };
 };
 
-const applyChanges = (paths: Set<string>, changes: CommitChange[]): void => {
+const applyChanges = (
+  paths: Set<string>,
+  changes: Pick<CommitChange, "path" | "previousPath" | "status">[],
+): void => {
   for (const change of changes) {
     if (change.status === "deleted") {
       paths.delete(change.path);
@@ -517,7 +561,30 @@ const mapAnalyzerHistory = (data: AnalyzerHistoryResult): LoadedHistory => {
             isDefault: branch === defaultBranch,
           },
         ];
-  const paths = new Set<string>();
+  const byId = new Map(data.commits.map((commit) => [commit.id, commit]));
+  const snapshots = new Map<string, string[]>();
+  const resolving = new Set<string>();
+  const snapshotFor = (commit: AnalyzerCommit): string[] => {
+    const cached = snapshots.get(commit.id);
+    if (cached) return cached;
+    if (resolving.has(commit.id)) throw new Error("Cyclic analyzer history.");
+    resolving.add(commit.id);
+    let snapshot = commit.snapshot;
+    if (!snapshot) {
+      const parents = commit.parents ?? [];
+      const parent = byId.get(parents[0]);
+      if (parents.length > 1 || (parents.length > 0 && !parent)) {
+        throw new Error("Analyzer history needs a boundary or merge tree snapshot.");
+      }
+      const paths = new Set(parent ? snapshotFor(parent) : []);
+      applyChanges(paths, commit.changes);
+      snapshot = [...paths];
+    }
+    snapshot = [...snapshot].sort((left, right) => left.localeCompare(right));
+    snapshots.set(commit.id, snapshot);
+    resolving.delete(commit.id);
+    return snapshot;
+  };
   let maxFileCount = 0;
   const commits = [...data.commits].reverse().map((commit): ExplorerCommit => {
     const changes = commit.changes.map((change): CommitChange => ({
@@ -526,8 +593,8 @@ const mapAnalyzerHistory = (data: AnalyzerHistoryResult): LoadedHistory => {
       status: change.status,
       summary: `${statusLabel(change.status)} ${change.path}`,
     }));
-    applyChanges(paths, changes);
-    maxFileCount = Math.max(maxFileCount, paths.size);
+    const snapshot = snapshotFor(commit);
+    maxFileCount = Math.max(maxFileCount, snapshot.length);
 
     return {
       id: commit.id,
@@ -543,7 +610,7 @@ const mapAnalyzerHistory = (data: AnalyzerHistoryResult): LoadedHistory => {
       refs: branchHeadRefs(branches, commit.id),
       branches: branchNamesForCommit(branches, commit.id, branch),
       changes,
-      snapshot: [...paths].sort((left, right) => left.localeCompare(right)),
+      snapshot,
     };
   });
 
@@ -675,8 +742,9 @@ export const loadRepositoryHistory = async ({
     requestedBranch,
   });
   const selectedBranch = selected.branch;
+  const browserCommitLimit = Math.min(maxCommits, browserLimits.maxCommits);
   const commitListResponse = await requestJson<GitHubCommitListItem[]>(
-    `${repoPath}/commits?sha=${encodeURIComponent(selectedBranch)}&per_page=${maxCommits}`,
+    `${repoPath}/commits?sha=${encodeURIComponent(selectedBranch)}&per_page=${browserCommitLimit}`,
     normalizedToken,
     fetcher,
   );
@@ -710,8 +778,10 @@ export const loadRepositoryHistory = async ({
     normalizedToken,
     fetcher,
   );
-  const paths = new Set(getTreePaths(treeResponse.data));
-  let maxFileCount = paths.size;
+  const snapshots = new Map<string, string[]>([[seedSha, getTreePaths(treeResponse.data)]]);
+  let treeTruncated = Boolean(treeResponse.data.truncated);
+  let rateLimit = treeResponse.rateLimit;
+  let maxFileCount = snapshots.get(seedSha)!.length;
   const commits: ExplorerCommit[] = [];
 
   const batchSize = 6;
@@ -720,26 +790,49 @@ export const loadRepositoryHistory = async ({
     const chunk = orderedList.slice(i, i + batchSize);
     const chunkResults = await Promise.all(
       chunk.map((item) =>
-        requestJson<GitHubCommitDetail>(
+        loadCommitDetail(
           `${repoPath}/commits/${item.sha}`,
           normalizedToken,
           fetcher,
+          repository.id,
         ),
       ),
     );
     for (let j = 0; j < chunkResults.length; j += 1) {
-      details[i + j] = chunkResults[j].data;
+      details[i + j] = chunkResults[j];
     }
   }
 
-  for (const [index, detail] of details.entries()) {
-    const changes = (detail.files ?? []).map(normalizeChange);
-
-    if (index > 0) {
-      applyChanges(paths, changes);
+  const bySha = new Map(details.map((detail) => [detail.sha, detail]));
+  const resolving = new Set<string>();
+  const snapshotFor = async (detail: GitHubCommitDetail): Promise<string[]> => {
+    const cached = snapshots.get(detail.sha);
+    if (cached) return cached;
+    if (resolving.has(detail.sha)) throw new GitHubApiError("Cyclic commit history.", 0);
+    resolving.add(detail.sha);
+    const parent = bySha.get(detail.parents?.[0]?.sha ?? "");
+    let snapshot: string[];
+    if (parent && !detail.filesTruncated) {
+      const paths = new Set(await snapshotFor(parent));
+      applyChanges(paths, (detail.files ?? []).map(normalizeChange));
+      snapshot = [...paths].sort((left, right) => left.localeCompare(right));
+    } else {
+      const tree = await requestJson<GitHubTreeResponse>(
+        `${repoPath}/git/trees/${detail.sha}?recursive=1`, normalizedToken, fetcher,
+      );
+      snapshot = getTreePaths(tree.data);
+      treeTruncated ||= Boolean(tree.data.truncated);
+      rateLimit = tree.rateLimit;
     }
+    snapshots.set(detail.sha, snapshot);
+    resolving.delete(detail.sha);
+    return snapshot;
+  };
 
-    maxFileCount = Math.max(maxFileCount, paths.size);
+  for (const detail of details) {
+    const changes = (detail.files ?? []).map(normalizeChange);
+    const snapshot = await snapshotFor(detail);
+    maxFileCount = Math.max(maxFileCount, snapshot.length);
 
     commits.push({
       id: detail.sha,
@@ -761,11 +854,11 @@ export const loadRepositoryHistory = async ({
       refs: branchHeadRefs(branches, detail.sha),
       branches: branchNamesForCommit(branches, detail.sha, selectedBranch),
       changes,
-      snapshot: [...paths].sort((left, right) => left.localeCompare(right)),
+      snapshot,
     });
   }
 
-  const truncatedNotice = treeResponse.data.truncated
+  const truncatedNotice = treeTruncated
     ? "Repository tree exceeds GitHub API size limit; some files may not be visible."
     : undefined;
 
@@ -786,13 +879,17 @@ export const loadRepositoryHistory = async ({
     graph: buildGraphFromCommits(commits),
     selectedBranch,
     historyMode: "recent",
-    notice:
-      selected.notice ??
-      truncatedNotice ??
-      (normalizedAnalyzerUrl
+    notice: [
+      selected.notice,
+      truncatedNotice,
+      details.some((detail) => detail.filesTruncated)
+        ? "A commit reached GitHub's 3000-file limit; its change list may be incomplete."
+        : undefined,
+      normalizedAnalyzerUrl
         ? "Analyzer service was unavailable; loaded the browser GitHub API fallback."
-        : undefined),
-    rateLimit: treeResponse.rateLimit ?? branchResult.rateLimit,
+        : undefined,
+    ].filter(Boolean).join(" ") || undefined,
+    rateLimit,
     source: "browser",
     treeFileCount: maxFileCount,
   };

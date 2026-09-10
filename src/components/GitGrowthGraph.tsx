@@ -85,15 +85,54 @@ export const createGraphModel = (
     parents[edge.child]?.push(edge.parent);
   });
 
-  const branchLanes = new Map<string, number>([["main", 0]]);
-  commits.forEach((commit) => {
-    if (!branchLanes.has(commit.branch)) {
-      branchLanes.set(commit.branch, branchLanes.size);
+  const lanes = new Map<number, number>();
+  let nextLane = 0;
+  const assignLane = (start: number, lane: number) => {
+    const sideParents: number[] = [];
+    let index: number | undefined = start;
+    while (index !== undefined && !lanes.has(index)) {
+      lanes.set(index, lane);
+      sideParents.push(...parents[index].slice(1));
+      index = parents[index][0];
     }
+    for (const parent of sideParents) {
+      if (!lanes.has(parent)) assignLane(parent, nextLane++);
+    }
+  };
+  const referencedParents = new Set(edges.map((edge) => edge.parent));
+  // Follow each head's first-parent chain before assigning its side histories.
+  const newestFirst = commits.map((_, index) => index).reverse();
+  for (const index of newestFirst.filter((index) => !referencedParents.has(index))) {
+    if (!lanes.has(index)) assignLane(index, nextLane++);
+  }
+  for (const index of newestFirst) {
+    if (!lanes.has(index)) assignLane(index, nextLane++);
+  }
+
+  const spans = new Map<number, { start: number; end: number }>();
+  const include = (lane: number, index: number) => {
+    const span = spans.get(lane) ?? { start: index, end: index };
+    span.start = Math.min(span.start, index);
+    span.end = Math.max(span.end, index);
+    spans.set(lane, span);
+  };
+  lanes.forEach((lane, index) => include(lane, index));
+  edges.forEach(({ child, parent }) => {
+    include(lanes.get(child)!, parent);
+    include(lanes.get(parent)!, child);
   });
+  const compactLanes = new Map<number, number>([[0, 0]]);
+  const laneEnds = [Infinity];
+  for (const [lane, span] of [...spans].filter(([lane]) => lane !== 0)
+    .sort((a, b) => a[1].start - b[1].start)) {
+    const reusable = laneEnds.findIndex((end) => end <= span.start);
+    const compact = reusable < 0 ? laneEnds.length : reusable;
+    laneEnds[compact] = span.end;
+    compactLanes.set(lane, compact);
+  }
 
   const nodes = commits.map((commit, index) => {
-    const lane = branchLanes.get(commit.branch) ?? 0;
+    const lane = compactLanes.get(lanes.get(index) ?? 0) ?? 0;
     const direction = lane === 0 ? 0 : lane % 2 ? -1 : 1;
 
     return {
@@ -110,6 +149,44 @@ export const createGraphModel = (
   });
 
   return { edges, nodes, parents };
+};
+
+export const projectGraphNodes = (
+  nodes: Pick<GraphNode, "x" | "y" | "z">[],
+  width: number,
+  height: number,
+  view: ViewState,
+  mix: number,
+) => {
+  const usableWidth = Math.max(1, width - Math.min(116, width / 3));
+  const usableHeight = Math.max(1, height - Math.min(88, height / 3));
+  const horizontalUnit = usableWidth / Math.max(nodes.length - 1, 1);
+  const verticalUnit = Math.min(usableHeight / 2.5, horizontalUnit * 0.82);
+  const cosYaw = Math.cos(view.yaw), sinYaw = Math.sin(view.yaw);
+  const cosPitch = Math.cos(view.pitch), sinPitch = Math.sin(view.pitch);
+  const points = nodes.map((node) => {
+    const rotatedX = node.x * cosYaw - node.z * sinYaw;
+    const yawDepth = node.x * sinYaw + node.z * cosYaw;
+    const rotatedY = node.y * cosPitch - yawDepth * sinPitch;
+    const depth = node.y * sinPitch + yawDepth * cosPitch;
+    const perspective = clamp(1 / (1 + depth * 0.075), 0.72, 1.3);
+    const flatX = node.x * horizontalUnit;
+    const flatY = node.y * verticalUnit * 0.82;
+    return {
+      x: flatX + (rotatedX * horizontalUnit * perspective - flatX) * mix,
+      y: flatY + (rotatedY * verticalUnit * perspective - flatY) * mix,
+      depth: node.y + (depth - node.y) * mix,
+      scale: 1 + (perspective - 1) * mix,
+    };
+  });
+  const maxX = Math.max(1, ...points.map((point) => Math.abs(point.x)));
+  const maxY = Math.max(1, ...points.map((point) => Math.abs(point.y)));
+  const fit = Math.min(1, usableWidth / (2 * maxX), usableHeight / (2 * maxY));
+  return points.map((point) => ({
+    ...point,
+    x: width / 2 + point.x * fit * view.zoom,
+    y: height / 2 + point.y * fit * view.zoom,
+  }));
 };
 
 const collectAncestors = (index: number, parents: number[][]) => {
@@ -189,51 +266,13 @@ export const GitGrowthGraph = ({
       surface: styles.getPropertyValue("--surface").trim(),
     };
     const mono = styles.getPropertyValue("--font-mono").trim();
-    const usableWidth = Math.max(220, width - 116);
-    const usableHeight = Math.max(120, height - 88);
-    const horizontalUnit =
-      usableWidth / Math.max(commits.length - 1, 1);
-    const verticalUnit = Math.min(usableHeight / 2.5, horizontalUnit * 0.82);
-    const view = viewRef.current;
-    const cosYaw = Math.cos(view.yaw);
-    const sinYaw = Math.sin(view.yaw);
-    const cosPitch = Math.cos(view.pitch);
-    const sinPitch = Math.sin(view.pitch);
-
-    const projected = model.nodes.map((node) => {
-      const rotatedX = node.x * cosYaw - node.z * sinYaw;
-      const yawDepth = node.x * sinYaw + node.z * cosYaw;
-      const rotatedY = node.y * cosPitch - yawDepth * sinPitch;
-      const rotatedDepth = node.y * sinPitch + yawDepth * cosPitch;
-      const perspective = clamp(1 / (1 + rotatedDepth * 0.075), 0.72, 1.3);
-      const perspectivePoint = {
-        depth: rotatedDepth,
-        scale: perspective,
-        x: width / 2 + rotatedX * horizontalUnit * view.zoom * perspective,
-        y: height / 2 + rotatedY * verticalUnit * view.zoom * perspective,
-      };
-      const flatPoint = {
-        depth: node.y,
-        scale: 1,
-        x: width / 2 + node.x * horizontalUnit * view.zoom,
-        y: height / 2 + node.y * verticalUnit * 0.82 * view.zoom,
-      };
-      const mix = projectionMixRef.current;
-      const point = {
-        depth:
-          flatPoint.depth +
-          (perspectivePoint.depth - flatPoint.depth) * mix,
-        scale:
-          flatPoint.scale +
-          (perspectivePoint.scale - flatPoint.scale) * mix,
-        x: flatPoint.x + (perspectivePoint.x - flatPoint.x) * mix,
-        y: flatPoint.y + (perspectivePoint.y - flatPoint.y) * mix,
-      };
-
-      node.screenX = point.x;
-      node.screenY = point.y;
-      node.depth = point.depth;
-      return point;
+    const projected = projectGraphNodes(
+      model.nodes, width, height, viewRef.current, projectionMixRef.current,
+    );
+    model.nodes.forEach((node, index) => {
+      node.screenX = projected[index].x;
+      node.screenY = projected[index].y;
+      node.depth = projected[index].depth;
     });
 
     if (projectionMixRef.current > 0.08) {

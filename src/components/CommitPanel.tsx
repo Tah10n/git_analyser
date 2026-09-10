@@ -40,8 +40,8 @@ export const CommitPanel = ({
 
   return (
     <>
-      <section className="workspace" data-od-id="history-workspace">
-        <header className="workspace-header">
+      <section className="history-view" data-od-id="history-history-view">
+        <header className="history-view-header">
           <div>
             <span className="eyebrow">
               Выбранный коммит · {commit.branch}

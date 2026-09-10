@@ -53,8 +53,9 @@ export const createHistoryCacheKey = (
   historyMode: HistoryMode,
 ): string =>
   [
-    input.trim().toLowerCase(),
-    branch.trim().toLowerCase() || "default",
+    "v3",
+    input.trim(),
+    branch.trim() || "default",
     historyMode,
     String(maxCommits),
   ].join("::");

@@ -2,7 +2,8 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const port = Number(process.env.PORT ?? 8787);
 const maxCommits = 1000;
@@ -88,20 +89,22 @@ const normalizeStatus = (status) => {
   return "modified";
 };
 
-const parseLog = (output) => {
-  const lines = output.match(/[^\r\n]+/g) ?? [];
+export const parseLog = (output) => {
+  const fields = output.split("\0");
   const commits = [];
   let current;
 
-  for (const line of lines) {
-    if (line.startsWith(marker)) {
-      const fields = line.slice(marker.length).match(/[^\u001f]+/g) ?? [];
+  for (let index = 0; index < fields.length;) {
+    // Git inserts line breaks before statuses, but paths are consumed verbatim.
+    const field = fields[index++].replace(/^\n+/, "");
+    if (!field) continue;
+    if (field.startsWith(marker)) {
       current = {
-        id: fields[0] ?? "",
-        parents: fields[1]?.match(/\S+/g) ?? [],
-        author: fields[2] ?? "",
-        date: fields[3] ?? "",
-        title: fields[4] ?? "",
+        id: field.slice(marker.length),
+        parents: fields[index++]?.match(/\S+/g) ?? [],
+        author: fields[index++] ?? "",
+        date: fields[index++] ?? "",
+        title: fields[index++] ?? "",
         changes: [],
       };
       commits.push(current);
@@ -112,20 +115,38 @@ const parseLog = (output) => {
       continue;
     }
 
-    const fields = line.match(/[^\t]+/g) ?? [];
-    const status = fields[0] ?? "";
-    const nextPath = fields[fields.length - 1] ?? "";
-    const previousPath = fields.length > 2 ? fields[1] : undefined;
+    if (!/^[AMDTRCUXB][0-9]*$/.test(field)) {
+      throw new Error("Invalid Git file status record.");
+    }
+    const previousPath = /^[RC]/.test(field) ? fields[index++] : undefined;
+    const nextPath = fields[index++];
 
     if (nextPath) {
       current.changes.push({
         path: nextPath,
         previousPath,
-        status: normalizeStatus(status),
+        status: normalizeStatus(field),
       });
     }
   }
 
+  return commits;
+};
+
+export const readRepositoryHistory = async (repoDir, limit) => {
+  const log = await run("git", [
+    "-C", repoDir, "log", "--topo-order", "--name-status", "-z",
+    "--find-renames", "--diff-merges=first-parent",
+    `--format=${marker}%H%x00%P%x00%an%x00%aI%x00%s`, "-n", String(limit),
+  ]);
+  const commits = parseLog(log);
+  const commitIds = new Set(commits.map((commit) => commit.id));
+  for (const commit of commits) {
+    if (commit.parents.length > 1 || !commitIds.has(commit.parents[0])) {
+      const tree = await run("git", ["-C", repoDir, "ls-tree", "-r", "--name-only", "-z", commit.id]);
+      commit.snapshot = tree.split("\0").filter(Boolean);
+    }
+  }
   return commits;
 };
 
@@ -173,27 +194,19 @@ const analyze = async (payload, response) => {
     ]);
 
     writeLine(response, "status", { message: "reading-history" });
-    const log = await run("git", [
-      "-C",
-      repoDir,
-      "log",
-      "--name-status",
-      `--format=${marker}%H%x1f%P%x1f%an%x1f%aI%x1f%s`,
-      "-n",
-      String(limit),
-    ]);
-    const commits = parseLog(log);
+    const commits = await readRepositoryHistory(repoDir, limit);
+    const selectedRef = (await run("git", ["-C", repoDir, "branch", "--show-current"])).trim();
 
     writeLine(response, "result", {
       repository: {
         owner: repository.owner,
         name: repository.name,
-        branch: ref,
+        branch: selectedRef,
         url: `https://github.com/${repository.owner}/${repository.name}`,
       },
       ref: {
         requested: ref,
-        selected: ref,
+        selected: selectedRef,
       },
       commits,
     });
@@ -257,10 +270,17 @@ const server = createServer(async (request, response) => {
 });
 
 const selfTest = () => {
+  const rootCommit = parseLog(
+    [`${marker}root`, "", "Ada", "2026-01-01T00:00:00Z", "Initial commit", "\nA", "README.md", ""].join("\0"),
+  )[0];
+  if (rootCommit.parents.length !== 0 || rootCommit.author !== "Ada" ||
+      rootCommit.date !== "2026-01-01T00:00:00Z" || rootCommit.title !== "Initial commit") {
+    throw new Error("Root commit fields must preserve the empty parent field.");
+  }
   const parsed = parseRepositoryUrl("https://github.com/acme/tool.git");
   const limit = normalizeCommitLimit(10_000);
   const parsedLog = parseLog(
-    `${marker}abc\u001fdef ghi\u001fAda\u001f2026-01-01T00:00:00Z\u001fInit\nA\tREADME.md\nR100\told.ts\tnew.ts`,
+    [`${marker}abc`, "def ghi", "Ada", "2026-01-01T00:00:00Z", "Init", "\nA", "README.md", "R100", "old.ts", "new.ts", ""].join("\0"),
   );
 
   if (parsed.owner !== "acme" || limit !== maxCommits || normalizeRef("feature/test") !== "feature/test") {
@@ -278,10 +298,12 @@ const selfTest = () => {
   console.log("Analyzer self-test passed.");
 };
 
-if (process.argv.includes("--self-test")) {
-  selfTest();
-} else {
-  server.listen(port, "127.0.0.1", () => {
-    console.log(`Analyzer listening on http://127.0.0.1:${port}`);
-  });
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  if (process.argv.includes("--self-test")) {
+    selfTest();
+  } else {
+    server.listen(port, "127.0.0.1", () => {
+      console.log(`Analyzer listening on http://127.0.0.1:${port}`);
+    });
+  }
 }
