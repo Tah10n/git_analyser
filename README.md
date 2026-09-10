@@ -1,155 +1,116 @@
-# Git History Explorer
+# Git Analyzer
 
-Git History Explorer is an IDE-like browser app for inspecting how a GitHub
-repository changes over time. Paste a GitHub URL or `owner/name`, choose a
-branch, and scrub through commits while the file tree and change list update
-together.
+**Explore a repository's history as an interactive graph, file tree, and commit timeline.**
 
-## Features
+[![CI](https://github.com/Tah10n/git_analyser/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Tah10n/git_analyser/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-- GitHub URL and `owner/name` input.
-- Bounded selected-branch history loading through the GitHub REST API.
-- Repository branch loading with a branch picker and default-branch fallback.
-- Static demo data fallback when no repository has been loaded.
-- Optional browser-local GitHub token for higher API limits.
-- IDE-style file tree with folder/file icons and change badges.
-- Search, changed-only filtering, and virtualized rows for larger trees.
-- Commit panel with author, date, short hash, message, and changed files.
-- Timeline slider with play, pause, previous, next, and speed controls.
-- Dark, light, and JetBrains-style themes.
-- IndexedDB history cache with an explicit clear action.
-- Browser-side WebM export for short timeline clips.
-- Optional analyzer service for larger repositories and broader history windows.
+Git Analyzer helps you trace branches and merges, inspect the files present at a
+commit, and play back how a GitHub repository evolved. It runs in your browser,
+starts with a bundled demo, and can use an optional local Git analyzer for a
+larger history window. The interface is currently in Russian.
 
-## Requirements
+![Git Analyzer showing demo history, the 3D commit graph, file tree, and metadata inspector](docs/images/demo.png)
 
-- Node.js 20.19+ or 22.12+.
-- npm 10 or newer.
-- Git for the optional analyzer and the test suite.
-- A modern Chromium, Firefox, or Safari browser.
-- GitHub API access from the browser.
+*Bundled demo data. The screenshot shows the actual application.*
 
-## Quick Start
+## What you can do
 
-```powershell
-npm install
+- **Navigate history visually.** Switch between 2D lanes and a rotatable 3D
+  graph; select nodes, zoom, or scrub through the timeline.
+- **Follow branches and merges.** Choose a branch and inspect parent links
+  within the loaded history window.
+- **Inspect each commit.** Browse its file tree, author, timestamp, SHA, refs,
+  and added, modified, deleted, or renamed paths.
+- **Focus on relevant files.** Search paths, show only changed files, and
+  expand folders in a virtualized tree.
+- **Play and share a sequence.** Adjust playback speed and export a WebM
+  summary of the loaded commits.
+- **Choose your appearance.** Dark, light, and IDE themes, with a collapsible
+  repository panel on smaller screens.
+
+## Run locally
+
+Install **Node.js 22.12+**, **npm 10+**, and **Git**. CI checks Node.js 22 and 24;
+Git is also used by the analyzer regression tests.
+
+```sh
+git clone https://github.com/Tah10n/git_analyser.git
+cd git_analyser
+npm ci
 npm run dev
 ```
 
-Open the printed local Vite URL in a browser.
+Open the URL printed by Vite (normally `http://127.0.0.1:5173`). The demo works
+without a GitHub token. To inspect a repository, enter `Tah10n/git_analyser`,
+press **Загрузить** (Load), and select a branch.
 
-## Loading A Repository
+For a local production preview:
 
-1. Enter a GitHub repository as `owner/name`,
-   `https://github.com/owner/name`, or a branch URL such as
-   `https://github.com/owner/name/tree/feature`.
-2. Optionally enter a GitHub personal access token. The app stores it in
-   `localStorage` and only sends it to `api.github.com`.
-3. Press **Load**.
-4. Use the branch picker to switch between loaded repository branches.
-5. Use the timeline, file tree, and commit panel to inspect the loaded history.
-
-The browser path intentionally loads a bounded commit window. When a repository
-is too large for comfortable browser use, the app shows a warning instead of
-freezing the interface.
-
-File trees follow each commit's first parent, so parallel histories stay separate.
-The loader follows paginated file changes; if a commit reaches GitHub's 3,000-file
-listing cap, it loads that commit's tree separately and warns that the change list
-may be incomplete. GitHub's recursive tree size limit still applies.
-
-## Interface Guide
-
-- **Command bar**: repository input, token field, branch picker, theme switcher,
-  API rate display, and cache clearing.
-- **File tree**: searchable tree for the selected commit. Folders start
-  collapsed, folders containing current commit changes open automatically, and
-  each folder can be opened or closed manually. Enable **Changed only** to show
-  only files touched by the current commit.
-- **Commit panel**: selected commit metadata and changed-file list.
-- **Timeline**: scrubber, playback controls, speed selector, and WebM export.
-
-## Browser Storage
-
-The app uses two browser storage areas:
-
-- `localStorage` for the optional GitHub token.
-- IndexedDB for loaded history cache entries.
-
-Use **Clear cache** in the command bar to delete cached histories. Clear the
-token field to remove the saved token.
-
-## WebM Export
-
-Press **Export WebM** in the timeline to record a compact canvas playback of the
-loaded commit sequence. Export requires `MediaRecorder` support. Current Chrome
-and Edge versions provide the best results.
-
-## Optional Analyzer
-
-The analyzer service is optional; the browser app works without it and falls
-back to direct GitHub API loading when the service is unavailable.
-
-Point the app at a service instance with:
-
-```powershell
-$env:VITE_ANALYZER_URL="http://127.0.0.1:8787"
-npm run dev
+```sh
+npm run build
+npm run preview
 ```
 
-Health check:
+The build output is `dist/` and can be served by a static host. No Node server
+is needed for browser-only use.
 
-```powershell
-Invoke-RestMethod -Uri http://127.0.0.1:8787/health
-```
+## Choose a loading mode
 
-Analyze a repository:
+| | Browser (default) | Optional analyzer |
+| --- | --- | --- |
+| Data source | GitHub REST API | A temporary Git clone |
+| App history window | Up to 20 recent commits | Up to 500 commits |
+| Setup | Start the frontend | Start the analyzer and set `VITE_ANALYZER_URL` |
+| GitHub token | Optional, sent to `api.github.com` | The frontend token is never forwarded |
+| Failure behavior | Visible API error or size warning | Falls back to the browser's 20-commit window |
 
-```powershell
-$body = @{
-  url = "https://github.com/owner/name"
-  ref = "main"
-  maxCommits = 200
-} | ConvertTo-Json
+The analyzer endpoint itself accepts up to 1,000 commits per request. These
+limits bound commit counts, not total memory or execution time. See the
+[analyzer guide](docs/analyzer.md) for the two-terminal setup and response contract.
 
-Invoke-WebRequest `
-  -Uri http://127.0.0.1:8787/history/analyze `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body $body
-```
+## Scope and limitations
 
-The response is newline-delimited JSON with progress messages and a final
-result. When configured, the app uses the service for larger history loads,
-renders the returned branch graph data without extra parent lookups, and keeps
-the browser-only path as a fallback.
+- History is a recent window of the selected branch, including reachable merge
+  ancestry. It is not an all-branches or complete-history view. There is no
+  user-facing history-limit control yet.
+- The browser branch picker loads the first 100 branches; a branch named in an
+  input URL is also looked up separately. The bundled analyzer returns its
+  selected branch only.
+- Trees follow first-parent ancestry. Window boundaries and analyzer merges use
+  explicit tree snapshots. Browser commit changes are paginated; at GitHub's
+  3,000-file cap, an extra tree request preserves the snapshot where possible,
+  while the changed-file list may remain incomplete.
+- GitHub rate limits and recursive-tree truncation still apply. Snapshots are
+  retained in memory, so a large tree can remain expensive even with few commits.
+- File contents and patch diffs are not displayed. WebM export creates a
+  separate commit-summary animation, not a recording of the interactive graph.
+  Export requires canvas capture and a supported WebM `MediaRecorder` codec.
+- Cached histories do not expire automatically. Clear the cache before reloading
+  when you need the latest repository state.
 
-Analyzer responses can include a `snapshot` array of file paths on each commit.
-Snapshots are required for merges and commits whose parent is outside the returned
-window. The bundled analyzer supplies them. Older services without those snapshots
-fall back to the bounded browser loader.
+## Storage and configuration
 
-## Scripts
+**Настройки** (Settings) contains the optional GitHub token, theme controls, and
+**Очистить кэш** (Clear cache). The token is saved in browser `localStorage`;
+history metadata and paths are cached in IndexedDB on the same browser origin.
+Clearing the token and clearing the cache are separate actions.
 
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start the Vite dev server. |
-| `npm run build` | Type-check and create a production build. |
-| `npm run preview` | Preview the production build locally. |
-| `npm run test` | Run Vitest tests. |
-| `npm run typecheck` | Run TypeScript project references. |
-| `npm run analyzer` | Start the optional analyzer endpoint. |
-| `npm run analyzer:self-test` | Run analyzer guardrail checks. |
+The default mode sends requests directly to GitHub. Configuring an analyzer
+also sends the repository URL, requested branch, and commit limit to that
+service. `VITE_ANALYZER_URL` is a build-time frontend setting: use it for an
+endpoint address, never a credential.
 
-## Troubleshooting
+## Documentation
 
-- **403 or low rate limit**: add a GitHub token or wait for the rate window to
-  reset.
-- **Repository stays on demo data**: check the repository input format and press
-  **Load** again.
-- **Branch falls back to the default**: confirm the selected branch still exists
-  on GitHub and reload.
-- **No WebM file is produced**: try Chrome or Edge and confirm the browser
-  supports `MediaRecorder`.
-- **Large tree warning**: use a smaller repository, reduce the commit window in
-  code, or use the analyzer endpoint for temporary extraction.
+- [Usage guide](docs/usage.md) — loading, graph controls, storage, and troubleshooting.
+- [Analyzer guide](docs/analyzer.md) — setup, API, constraints, and fallback behavior.
+- [Contributing](CONTRIBUTING.md) — development checks and browser verification.
+- [Report a bug or request a feature](https://github.com/Tah10n/git_analyser/issues/new/choose).
+
+Built with React, TypeScript, Vite, Canvas 2D, IndexedDB, and an optional Node.js
+HTTP service. The npm package name is `git-history-explorer`.
+
+## License
+
+Licensed under [Apache-2.0](LICENSE).

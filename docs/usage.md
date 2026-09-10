@@ -1,116 +1,112 @@
-# Usage Guide
+# Usage guide
 
-Git History Explorer lets you load GitHub repository history and review how the
-file tree changes across commits.
+See [Run locally](../README.md#run-locally) for installation. The interface uses
+Russian labels; English explanations below match the current controls.
 
-## Start The App
+## Load a repository
 
-```powershell
-npm install
-npm run dev
-```
+The initial screen contains bundled demo commits. The example repository shown
+in demo mode is illustrative; it is not automatically fetched from GitHub.
 
-Open the local Vite URL printed by the command.
+1. Enter `owner/name`, an HTTPS GitHub repository URL, or a branch URL:
+   `https://github.com/owner/name/tree/feature/graph`. URLs ending in `.git` work too.
+2. If needed, open **Настройки** (Settings) and enter a GitHub token with only
+   the repository access you need.
+3. Press **Загрузить** (Load). The source label distinguishes demo, browser,
+   and service data.
+4. Use **Ветка** (Branch) to load another branch. A missing requested branch
+   falls back to the default branch in browser mode and produces a warning.
 
-## Demo Mode
+Browser mode loads up to **20 recent commits**, displayed oldest to newest in
+the loaded sequence. It loads the first 100 branch refs and separately resolves
+a branch explicitly named in the input URL. Parent links outside the loaded
+window do not appear as graph nodes.
 
-On first load, the app shows bundled demo data. Demo mode is useful for testing
-the timeline, file tree, themes, and export flow without making GitHub API
-requests.
+When an analyzer URL is configured, the app tries the service first, requesting
+up to **500 commits**. Service failure falls back to browser mode with a notice.
+The bundled service exposes only the selected branch in its response; enter a
+different branch URL to analyze another one. See [Analyzer setup](analyzer.md).
 
-## API Mode
+## Graph and timeline
 
-Use the repository field to load real data:
+Selecting a graph node or moving **Позиция в истории** (History position)
+updates the file tree, change list, and metadata inspector together.
 
-- `owner/name`
-- `https://github.com/owner/name`
-- `https://github.com/owner/name.git`
-- `https://github.com/owner/name/tree/feature`
+| Control | Behavior |
+| --- | --- |
+| **Объём** | Switch to 3D; drag with the pointer or touch to rotate |
+| **2D** | Show fixed lanes; click a visible node to select it |
+| Mouse wheel over graph | Zoom in or out |
+| **Сбросить вид** | Restore the graph's initial rotation and zoom |
+| Previous / next buttons | Move one commit backward or forward |
+| **Воспроизвести** / **Пауза** | Start or pause looping playback |
+| **0.75×**, **1×**, **1.5×**, **2×** | Change timeline playback speed |
 
-The app loads repository branches, starts with the default branch unless the
-input URL names another branch, fetches a bounded set of commits, normalizes
-changed files, and reconstructs file-tree snapshots for timeline navigation.
+Focus the graph with Tab for keyboard controls:
 
-Use the branch picker in the command bar to switch branches without clearing the
-repository input, token, theme, or cache controls. If the requested branch is not
-available, the app falls back to the repository default branch and shows a
-warning.
+| Key | Action |
+| --- | --- |
+| Left / right in 2D | Select the previous / next commit |
+| Arrow keys in 3D | Rotate; hold Shift for a larger step |
+| `+` / `-` | Zoom |
+| Home | Reset the view |
 
-## Token Handling
+The graph shows ancestry within the loaded window. Lanes represent parent
+chains; they are not a complete record of historical branch names.
 
-The token field is optional. Use it when the GitHub API rate limit is too low
-for the repository you are inspecting.
+## File tree and inspector
 
-- Tokens are stored in `localStorage`.
-- Tokens are sent only to `api.github.com`.
-- Clearing the token field removes the saved value.
+- **Поиск по пути** filters paths; **Только изменённые** focuses on the selected
+  commit's changes, including deleted paths.
+- Folders start collapsed, and paths touched by the selected commit expand
+  automatically. Use the chevron to open or close a folder manually.
+- The visible/total count reflects tree filtering and collapsed folders.
+- The inspector shows the author, date, branch, SHA, parent SHAs, and refs.
+- On narrow screens, **Репозиторий** opens or closes the file-tree panel.
 
-Use a token with the narrowest access needed for the repositories you inspect.
+This view displays file metadata and changes, not source contents or text diffs.
 
-## Timeline Workflow
+## Settings and stored data
 
-1. Load a repository or use demo data.
-2. Drag the timeline slider to jump between commits.
-3. Use previous/next for precise navigation.
-4. Press play to loop through the commit sequence.
-5. Adjust speed when reviewing dense histories.
+Open **Настройки** to switch between **Тёмная**, **Светлая**, and **IDE**, manage
+the token, see available GitHub rate-limit information, or clear cached history.
 
-The selected commit controls both the file tree and the commit panel.
+The optional token is stored in `localStorage` and attached only to requests to
+`api.github.com`. Clearing the field removes its saved value. The analyzer does
+not receive it. Clearing a token does not erase previously cached repository data.
 
-## File Tree Workflow
+IndexedDB stores history metadata and file paths, keyed by source, repository
+input, branch, history mode, and commit limit. Branch-name case is preserved.
+Entries have no expiry. For fresh data, use **Очистить кэш**, then **Загрузить**.
+Clearing the cache does not remove the token or the history already on screen.
+If browser storage is unavailable, loading can still work for the current session.
 
-- Folders start collapsed.
-- Folders containing files touched by the selected commit open automatically.
-- Use the chevron beside a folder to open or close it manually.
-- Use **Search** to filter by path.
-- Enable **Changed only** to focus on files touched by the selected commit.
-- Watch change badges for added, modified, deleted, and renamed paths.
-- Use the visible/total count to understand how much the current filters hide.
+## Export
 
-The tree renders a virtualized row window so large trees remain responsive.
+Press **Экспорт WebM**, wait for recording to finish, then use **Скачать WebM**
+to save `git-history-explorer.webm`.
 
-## Cache Workflow
+The export is a 1280 × 720 commit-summary animation of the loaded sequence. Each
+commit gets roughly 420 ms and shows up to eight changed paths. Graph rotation,
+tree filters, theme, and timeline speed do not alter this export. MP4 and GIF
+are not implemented.
 
-Loaded histories are cached in IndexedDB using the repository input, selected
-branch, history mode, and commit limit as the cache key. Repeat loads reuse
-cached data when possible.
+The browser must support `MediaRecorder`, a WebM codec, and canvas capture.
+If recording fails, try a Chromium browser and keep the tab active until it ends.
 
-Use **Clear cache** to remove cached histories. This does not remove the saved
-token.
+## Troubleshooting
 
-## Export Workflow
+| Symptom | What to check |
+| --- | --- |
+| Demo still displayed | Enter an actual repository and press **Загрузить**; the demo URL is illustrative |
+| 403 or 429 response | Check the displayed rate limit, wait for reset, or add a suitable GitHub token |
+| 404 response | Check repository spelling, token access, and the requested branch |
+| Unexpected default branch | Check the warning and enter the full branch URL |
+| Recent commits missing | Clear cache and reload; browser mode still stops at 20 commits |
+| Incomplete tree or changes | Read the size/truncation warning; GitHub API caps can limit the result |
+| Service fallback warning | Check the analyzer health endpoint, URL, and browser console; restart Vite after changing configuration |
+| WebM unavailable | Confirm WebM recording support in the browser |
 
-Use **Export WebM** to record a short canvas-based playback of the timeline.
-When recording succeeds, the app exposes a browser object URL for the generated
-clip.
-
-Export depends on `MediaRecorder`. Chrome and Edge currently provide the most
-reliable support.
-
-## Analyzer Workflow
-
-The optional analyzer endpoint extracts commit metadata with Git for cases where
-browser API loading is not enough.
-
-```powershell
-npm run analyzer
-```
-
-The endpoint listens on `http://127.0.0.1:8787`.
-
-```powershell
-$body = @{
-  url = "https://github.com/owner/name"
-  ref = "main"
-  maxCommits = 200
-} | ConvertTo-Json
-
-Invoke-WebRequest `
-  -Uri http://127.0.0.1:8787/history/analyze `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body $body
-```
-
-The endpoint streams newline-delimited JSON. Each request uses a temporary clone
-and removes it after the job completes or fails.
+If the problem persists, [open a bug report](https://github.com/Tah10n/git_analyser/issues/new/choose)
+with reproduction steps, browser/OS, and the displayed error. Remove tokens and
+any repository data you do not want to share from logs and screenshots.

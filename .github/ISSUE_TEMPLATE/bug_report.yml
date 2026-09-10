@@ -1,0 +1,45 @@
+name: Bug report
+description: Report an error or unexpected behavior.
+title: 'bug: '
+body:
+  - type: markdown
+    attributes:
+      value: Check existing issues first. Remove tokens and sensitive repository data from examples and logs.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include a shareable repository URL or explain how to reproduce with demo data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the error message and a screenshot when useful.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser and version, OS, Node.js version if running locally, and commit SHA if known.
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: History source
+      options:
+        - Demo
+        - GitHub API
+        - Analyzer service
+        - Unsure
+    validations:
+      required: true

@@ -1,6 +1,12 @@
 {
   "name": "git-history-explorer",
   "version": "0.1.0",
+  "description": "Explore GitHub history with an interactive commit graph, file tree, and timeline.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tah10n/git_analyser.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
